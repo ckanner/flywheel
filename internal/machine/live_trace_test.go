@@ -101,6 +101,29 @@ func TestLiveTraceWriterStreamsBoundedFramesAndHandlesGuards(t *testing.T) {
 	assert.Equal(t, "thread-live-99", endFrame["sessionId"])
 	assert.Equal(t, "process failed", endFrame["errorMessage"])
 	assert.True(t, strings.HasPrefix(endFrame["stderr"].(string), "… [truncated]\n"))
+
+	// Managed .ignore is created and excludes volatile runtime artifacts while
+	// preserving user-authored .ignore files and refreshing outdated managed ones.
+	ignorePath := filepath.Join(taskDir, ".ignore")
+	ignoreRaw, err := os.ReadFile(ignorePath)
+	require.NoError(t, err)
+	assert.Equal(t, taskIgnoreBody, string(ignoreRaw))
+	// Idempotent when already current.
+	ensureTaskIgnore(taskDir)
+	// Refresh when managed header is present with outdated content.
+	require.NoError(t, os.WriteFile(ignorePath, []byte(taskIgnoreHeader+".traces/\n"), 0o644))
+	ensureTaskIgnore(taskDir)
+	ignoreRaw, err = os.ReadFile(ignorePath)
+	require.NoError(t, err)
+	assert.Equal(t, taskIgnoreBody, string(ignoreRaw))
+	// Preserve custom user-authored .ignore untouched.
+	customDir := t.TempDir()
+	customBody := "custom-dir/\n"
+	require.NoError(t, os.WriteFile(filepath.Join(customDir, ".ignore"), []byte(customBody), 0o644))
+	ensureTaskIgnore(customDir)
+	customRead, err := os.ReadFile(filepath.Join(customDir, ".ignore"))
+	require.NoError(t, err)
+	assert.Equal(t, customBody, string(customRead))
 }
 
 func TestSessionCallForwardsOnEventToLiveTraceAndCaller(t *testing.T) {

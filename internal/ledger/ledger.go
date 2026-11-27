@@ -9,6 +9,7 @@ import "strings"
 // garden-proposals.md 是 intake/garden 模块的产物（P3 修复：Node 版漏分类，
 // 导致它们可能落进单元 diff 判定）。
 var LedgerFiles = map[string]bool{
+	".ignore":             true,
 	"preparation.json":    true,
 	".preparation.lock":   true,
 	".state.lock":         true, // C9 flock 锁文件（v0.18）——绝不进单元 diff/提交
@@ -32,6 +33,7 @@ var LedgerDirs = []string{"reports/", "approvals/", ".control/", ".sessions/", "
 // metrics 是追加式遥测）。账本区其余（state/retro/inbox/reports/approvals）
 // 留在已提交契约层。
 var CommitVolatileFiles = map[string]bool{
+	".ignore":            true,
 	"preparation.json":   true,
 	".preparation.lock":  true,
 	".investigation/":    true,

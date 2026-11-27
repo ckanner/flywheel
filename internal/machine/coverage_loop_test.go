@@ -22,9 +22,9 @@ index 0000000..7898192
 +injected
 `
 
-// TestDefectInjectionSampledMissingConfigInboxButContinues
+// TestDefectInjectionSampledMissingConfigSkipsWithoutInboxNoise
 // every-n-units=1 → 首个单元 L1 绿即采样；patch/test-cmd 未配置 →
-// missing-config 进 inbox 提示人工配置、单元继续（P0-2 分支语义）。
+// 记录 missing-config 证据与日志并继续执行，不往面向人类的 inbox 刷噪音。
 func TestDefectInjectionSampledMissingConfigInboxButContinues(t *testing.T) {
 	fx := newGitFixture(t)
 	sd := happyDrivers()
@@ -42,14 +42,11 @@ func TestDefectInjectionSampledMissingConfigInboxButContinues(t *testing.T) {
 	diMap, ok := ps.Evidence.DefectInjection.(map[string]any)
 	require.True(t, ok)
 	assert.Equal(t, "missing-config", diMap["skipped"])
-	found := false
 	for _, e := range st.Inbox {
 		entry, _ := e.(map[string]any)
-		if r, _ := entry["reason"].(string); strings.Contains(r, "defect injection sampled") {
-			found = true
-		}
+		r, _ := entry["reason"].(string)
+		assert.NotContains(t, r, "defect injection sampled", "unconfigured defect-injection skip should not spam human inbox")
 	}
-	assert.True(t, found, "missing-config 必须进 inbox 提示人")
 }
 
 func writeDefectPatch(t *testing.T, fx *fixture) string {

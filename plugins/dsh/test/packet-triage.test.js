@@ -266,12 +266,22 @@ test('Bottom-of-stream Escalation Triage Card renders findings, all 3 actions, a
   const summary = ui.container.querySelector('[data-testid="main-escalation-summary"]');
   assert.ok(summary, 'expected bottom-of-stream persistent escalation triage card');
   assert.match(summary.textContent, /M01-T02/);
-  assert.match(summary.textContent, /L1 确定性门禁已绿/);
+  assert.match(summary.textContent, /测试已通过/);
   assert.match(summary.textContent, /F-1/);
   assert.match(summary.textContent, /b2b flag mismatch/);
-  assert.ok(summary.querySelector('[data-testid="triage-retry-M01-T02"]'));
-  assert.ok(summary.querySelector('[data-testid="triage-replan-M01-T02"]'));
-  assert.ok(summary.querySelector('[data-testid="triage-accept-M01-T02"]'));
+  const retryBtn = summary.querySelector('[data-testid="triage-retry-M01-T02"]');
+  const replanBtn = summary.querySelector('[data-testid="triage-replan-M01-T02"]');
+  const acceptBtn = summary.querySelector('[data-testid="triage-accept-M01-T02"]');
+  const guidanceInput = summary.querySelector('[data-testid="triage-guidance-M01-T02"]');
+  assert.equal(retryBtn?.textContent?.trim(), '重新执行');
+  assert.equal(replanBtn?.textContent?.trim(), '修改要求');
+  assert.equal(acceptBtn?.textContent?.trim(), '直接通过');
+  assert.equal(guidanceInput?.tagName, 'INPUT');
+  // Option B layout: action buttons appear above the optional single-line input.
+  assert.ok(
+    (retryBtn.compareDocumentPosition(guidanceInput) & 4) !== 0,
+    'expected action buttons above the optional single-line input',
+  );
 
   // Click Retry with Guidance -> sends action: 'packet' then calls startRun
   await act(async () => {

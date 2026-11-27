@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ckanner/flywheel/internal/errs"
 	"github.com/ckanner/flywheel/internal/watchdog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -293,4 +294,30 @@ func TestRunCodexProTruncatedCaptureCannotBillCompleteLookingPrefix(t *testing.T
 	assert.Nil(t, r.Usage)
 	assert.Equal(t, "unknown", r.Session.UsageStatus)
 	assert.Equal(t, "unknown", r.Session.Outcome)
+}
+
+func TestRunCodexProReadOnlyOutputLimitRetiresThreadForSafeRetry(t *testing.T) {
+	a := codexProRunArgs(t, "read-only-output-limit")
+	a.PermissionMode = "read-only"
+	a.PersistentSession, a.RequestID = true, "ro-output-limit-1"
+	r := RunCodexPro(a)
+	require.False(t, r.Settled)
+	require.True(t, r.Truncated)
+	require.True(t, r.Session.CleanupConfirmed)
+	assert.Equal(t, "dispatched", r.Session.Dispatch)
+	assert.Equal(t, "failed", r.Session.Outcome)
+	assert.False(t, r.Session.ResumeCandidate)
+	assert.Equal(t, errs.TRANSPORT, r.ErrorCode)
+	require.NotNil(t, r.ErrorMessage)
+	assert.Contains(t, *r.ErrorMessage, "16777216 bytes")
+
+	// Workspace-write output-limit must still remain unknown (strictly blocked).
+	w := codexProRunArgs(t, "read-only-output-limit")
+	w.PermissionMode = "workspace-write"
+	w.PersistentSession, w.RequestID = true, "rw-output-limit-1"
+	wr := RunCodexPro(w)
+	assert.False(t, wr.Settled)
+	assert.True(t, wr.Truncated)
+	assert.Equal(t, "unknown", wr.Session.Outcome)
+	assert.False(t, wr.Session.ResumeCandidate)
 }

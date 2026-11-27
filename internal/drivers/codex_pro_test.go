@@ -435,6 +435,13 @@ func TestCodexProWorkerProcessFixture(t *testing.T) {
 		receipt["ok"] = false
 		proObject(receipt, "outcome", "execution")["truncated"] = true
 	}
+	if scenario == "read-only-output-limit" {
+		receipt["ok"] = false
+		proObject(receipt, "outcome")["stopReason"] = "error"
+		proObject(receipt, "outcome")["diagnostic"] = "codex-pro: protocol frame or retained output exceeded 16777216 bytes"
+		proObject(receipt, "outcome", "execution")["truncated"] = true
+		proObject(receipt, "outcome", "execution")["failure"] = map[string]any{"stage": "output", "category": "output-limit"}
+	}
 	fmt.Fprintln(os.Stderr, "worker diagnostic")
 	fmt.Print(dshJSONL(codexProFrame(request, receipt)))
 	if scenario == "outer-truncated" {

@@ -249,7 +249,9 @@ func applySessionFacts(record *state.SessionRecord, result drivers.Result, diges
 			record.ThreadID = s.SessionID
 		}
 	}
-	if safeSessionOutcome(result, record.Last.ID) && candidate != "" {
+	truncatedSafe := !result.Truncated || (record.Last.CandidateBefore != "" && candidate == record.Last.CandidateBefore &&
+		record.Last.GuardBefore == record.Last.GuardAfter)
+	if safeSessionOutcome(result, record.Last.ID) && candidate != "" && truncatedSafe {
 		record.Last.Status = "received"
 		record.ResumeCandidate = reusable && s.ResumeCandidate && s.SessionID != ""
 		// A proven startup/admission failure did not touch the previously
@@ -348,8 +350,8 @@ func (c *Context) reconcileSessionReceipts() error {
 		}
 		if err != nil {
 			if receipt != nil {
-				applySessionFacts(r, result, digest, receipt.CandidateAfter)
 				r.Last.GuardAfter = receipt.GuardAfter
+				applySessionFacts(r, result, digest, receipt.CandidateAfter)
 				// A missing post-call proof still forbids application even when
 				// the process itself has an otherwise safe terminal result.
 				r.Last.Status, r.ResumeCandidate = "blocked", false
@@ -357,8 +359,8 @@ func (c *Context) reconcileSessionReceipts() error {
 			}
 			return c.sessionBlock(key, err.Error())
 		}
-		applySessionFacts(r, result, digest, receipt.CandidateAfter)
 		r.Last.GuardAfter = receipt.GuardAfter
+		applySessionFacts(r, result, digest, receipt.CandidateAfter)
 		// Attribution does not depend on today's candidate, binding or guards.
 		// Account the original bound receipt before any replay prerequisite can
 		// block it, keeping the role result unconsumed for normal application.
@@ -667,8 +669,8 @@ func (c *Context) invokeScoped(role, scope string, args drivers.CallArgs, call f
 	if err != nil {
 		return drivers.Result{}, c.sessionBlock(key, "terminal receipt could not be saved: "+err.Error())
 	}
-	applySessionFacts(r, result, digest, after)
 	r.Last.GuardAfter = guardAfter
+	applySessionFacts(r, result, digest, after)
 	if c.sessionGuardViolated(role, scope) {
 		r.Reason = *result.ErrorMessage
 	}

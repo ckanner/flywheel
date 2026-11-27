@@ -474,13 +474,14 @@ func (c *Context) maybeDefectInjection(packet *contract.Packet) (*defectinjectio
 	}
 
 	if di.Patch == "" || di.TestCmd == "" {
-		return inboxContinue(
-			fmt.Sprintf("defect injection sampled for %s but defect-injection.patch/test-cmd are not configured "+
-				"in flywheel.config.json — a human should add them for this task.", packet.PacketID),
-			map[string]any{
-				"skipped": "missing-config",
-				"detail":  "sampled but defect-injection.patch/test-cmd not configured for this task",
-			})
+		c.Log(fmt.Sprintf("defect injection sampled for %s skipped (defect-injection.patch/test-cmd not configured)", packet.PacketID))
+		ps.Evidence.DefectInjection = map[string]any{
+			"at":      c.nowISO(),
+			"skipped": "missing-config",
+			"detail":  "sampled but defect-injection.patch/test-cmd not configured for this task",
+		}
+		c.save()
+		return nil, c.err()
 	}
 	outcome := defectinjection.RunDefectInjection(defectinjection.Args{
 		Context:          c.RunContext,

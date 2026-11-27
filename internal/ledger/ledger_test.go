@@ -8,7 +8,7 @@ import (
 
 func TestLedgerClassification(t *testing.T) {
 	ledger := []string{
-		".state.lock", ".run.lock", ".stop-request", ".control/stop-request-abc", ".control/orchestrator-pid-abc", "state.json", "retro.md", "metrics.jsonl", "inbox.md",
+		".ignore", ".state.lock", ".run.lock", ".stop-request", ".control/stop-request-abc", ".control/orchestrator-pid-abc", "state.json", "retro.md", "metrics.jsonl", "inbox.md",
 		"orchestrator.pid", "orchestrator.log",
 		"triage-inbox.md", "garden-proposals.md",
 	}
@@ -25,6 +25,7 @@ func TestLedgerClassification(t *testing.T) {
 }
 
 func TestVolatileSet(t *testing.T) {
+	assert.True(t, CommitVolatileFiles[".ignore"])
 	assert.True(t, CommitVolatileFiles["metrics.jsonl"])
 	assert.True(t, CommitVolatileFiles["project-context.md"])
 	assert.True(t, IsLedgerTaskPath("project-context.md"))

@@ -5,6 +5,14 @@ results are recorded separately in the [release runbook](docs/en/releasing.md)
 and [validation index](docs/validation/README.md). Historical entries retain
 their original language.
 
+## 0.41.1 — 2026-11-26 (4-Layer Output-Limit Defense, Read-Only Self-Recovery & Concise Triage Card UX)
+
+- **Task-dir `.ignore` & bounded read-only inspection discipline (`internal/ledger/ledger.go`, `internal/machine/live_trace.go`, `internal/prompts/prompts.go`)**: classify `.ignore` in both `LedgerFiles` and `CommitVolatileFiles`, automatically maintain an idempotent ripgrep/fd-compatible `.ignore` in `docs/<slug>/` excluding multi-MB volatile runtime logs/traces/receipts (while preserving user-authored `.ignore` files), and remind read-only reviewers to emit concise, bounded stdout during batch inspection.
+- **Align Pro/native bridge `machineOutputBytes` to 16 MiB (`plugins/dsh/src/{codex-pro,claude-code-pro,antigravity}-bridge.js`)**: raise `LIMITS.machineOutputBytes` from `1 MiB` to `16 MiB` to match Go's `watchdog.MaxBuffer` while keeping `receiptFrameBytes = 8 MiB` and remaining safely below upstream's 32 MiB default.
+- **Verified read-only `output-limit` self-recovery (`internal/drivers/codex_pro.go`, `internal/machine/sessions.go`)**: when an attested `read-only` Codex Pro invocation fails strictly from adapter `output-limit` truncation with `cleanup.confirmed == true`, preserve the real diagnostic, mark `dispatch = "dispatched"` / `outcome = "failed"` / `ErrorCode = TRANSPORT`, and require unchanged `candidate` and `guard` in `applySessionFacts` so the damaged thread is retired and retried cleanly with a fresh session instead of deadlocking in `blocked` (write-capable roles or any workspace/guard mutation remain strictly `blocked`).
+- **Quiet unconfigured defect-injection skips (`internal/machine/units.go`)**: record `missing-config` evidence and log a diagnostic when `defect-injection.patch`/`test-cmd` are not configured instead of appending noise to human `state.inbox`.
+- **Concise Human Triage Card copy & buttons-first layout (`plugins/dsh/src/client/views/ChatStreamView.tsx`, `docs/{en,zh-CN}/session-recovery.md`)**: simplify badge copy (`测试已通过` / `Tests Passed`), place concise action buttons (`重新执行` / `修改要求` / `直接通过`, English `Retry` / `Revise Spec` / `Accept`) with hover explanations above a single-line optional note input.
+
 ## 0.41.0 — 2026-11-26 (First-Class Inbox Human Triage, Universal Closed-World Review, True Context Occupancy & Degraded Host Diagnostics)
 
 - **First-class human `inbox` triage protocol (`internal/machine/packet_triage.go`, `internal/cli/console_packet.go`, `internal/cli/packet.go`, `plugins/dsh/src/packet-control.js`)**: add verified human-only `control packet` and interactive `flywheel packet <taskDir> --id <id> (--retry|--replan|--accept) --reason <text> [--guidance <text>]` actions (`FLYWHEEL_PACKET_USER_ACTION` host proof or TTY confirmation, strictly blocked from LLM tools):

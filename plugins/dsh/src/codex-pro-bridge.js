@@ -6,7 +6,7 @@ import { validateNativeAdmission, validateObservationRequest } from './machine-w
 import { inspectSubscriptionEnvironment, validateSubscriptionPolicy } from './subscription-controls.js';
 
 export const ADAPTER = Object.freeze({ package: 'dsh-subagent-codex-pro', version: '0.10.2', protocol: 1 });
-export const LIMITS = Object.freeze({ requestBytes: 1024 * 1024, machineOutputBytes: 1024 * 1024,
+export const LIMITS = Object.freeze({ requestBytes: 1024 * 1024, machineOutputBytes: 16 * 1024 * 1024,
   progressBytes: 1024 * 1024, receiptFrameBytes: 8 * 1024 * 1024, admissionMs: 10000 });
 const require = createRequire(import.meta.url);
 const subscriptionCommands = new WeakMap();

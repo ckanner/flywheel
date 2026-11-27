@@ -13,6 +13,34 @@ import (
 
 var maxLiveTraceBytes = 2 << 20 // 2 MiB bounded live trace stream per invocation
 
+const taskIgnoreHeader = "# Managed by Flywheel — exclude volatile runtime logs/receipts from search tools\n"
+
+const taskIgnoreBody = taskIgnoreHeader +
+	".traces/\n" +
+	".sessions/\n" +
+	".control/\n" +
+	".investigation/\n" +
+	"metrics.jsonl\n" +
+	"orchestrator.log\n" +
+	"orchestrator.pid\n" +
+	".state.lock\n" +
+	".run.lock\n" +
+	".stop-request\n" +
+	".preparation.lock\n"
+
+// ensureTaskIgnore writes a ripgrep/fd-compatible .ignore in the task directory
+// so read-only search tools skip multi-MB orchestrator traces, receipts, and
+// logs. User-authored .ignore files (without the managed header) are preserved.
+func ensureTaskIgnore(taskDir string) {
+	path := filepath.Join(taskDir, ".ignore")
+	if existing, err := os.ReadFile(path); err == nil {
+		if string(existing) == taskIgnoreBody || !strings.HasPrefix(string(existing), taskIgnoreHeader) {
+			return
+		}
+	}
+	_ = os.WriteFile(path, []byte(taskIgnoreBody), 0o644)
+}
+
 // liveTraceWriter appends real-time start/event/end JSONL frames under
 // `<taskDir>/.traces/live-<invocationId>.jsonl` (commit-volatile zone) so UI
 // consoles can render streaming model thinking, tool calls, and failure details
@@ -34,6 +62,7 @@ func openLiveTrace(taskDir, key, role, scope string, r *state.SessionRecord, arg
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil
 	}
+	ensureTaskIgnore(taskDir)
 	path := filepath.Join(dir, "live-"+r.Last.ID+".jsonl")
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
 	if err != nil {

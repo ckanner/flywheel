@@ -226,7 +226,7 @@ createInterface({ input: process.stdin }).on('line', line => {
       return;
     }
     if (['hang', 'stubborn', 'descendant'].includes(scenario)) return;
-    if (scenario === 'output-limit') { process.stdout.write('x'.repeat(1100000)); return; }
+    if (scenario === 'output-limit') { process.stdout.write('x'.repeat(16 * 1024 * 1024 + 1024)); return; }
     if (scenario === 'malformed') { process.stdout.write('{bad-json\n'); return; }
     if (scenario !== 'unknown-usage') {
       const delta = { totalTokens: 108, inputTokens: 100, cachedInputTokens: 25, outputTokens: 8, reasoningOutputTokens: 3 };

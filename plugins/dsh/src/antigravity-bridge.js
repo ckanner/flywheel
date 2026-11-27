@@ -4,7 +4,7 @@ import { isAbsolute } from 'node:path';
 import { validateNativeAdmission, validateObservationRequest } from './machine-worker.js';
 
 export const ADAPTER = Object.freeze({ package: '@ckanner/dsh-subagent-antigravity', version: '0.3.1', protocol: 1 });
-export const LIMITS = Object.freeze({ requestBytes: 12 * 1024 * 1024, machineOutputBytes: 1024 * 1024,
+export const LIMITS = Object.freeze({ requestBytes: 12 * 1024 * 1024, machineOutputBytes: 16 * 1024 * 1024,
   progressBytes: 1024 * 1024, receiptFrameBytes: 8 * 1024 * 1024, admissionMs: 10000 });
 const require = createRequire(import.meta.url);
 export class WorkerError extends Error {

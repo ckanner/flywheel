@@ -685,10 +685,10 @@ func TestDefectInjectionMissingConfigContinues(t *testing.T) {
 
 	summary, err := RunTask(runOpts(fx, happyDrivers().set()))
 	require.NoError(t, err)
-	assert.Equal(t, "completed", summary.Status, "缺配置进 inbox 叫人但单元继续")
+	assert.Equal(t, "completed", summary.Status, "缺配置仅记日志与证据，不刷 inbox 且单元继续")
 
 	st := loadFixtureState(t, fx)
-	assert.NotEmpty(t, st.Inbox)
+	assert.Empty(t, st.Inbox)
 	ps := st.Packets["M01-T01"]
 	di, ok := ps.Evidence.DefectInjection.(map[string]any)
 	require.True(t, ok)

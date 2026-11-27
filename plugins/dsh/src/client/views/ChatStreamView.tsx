@@ -2493,8 +2493,8 @@ export function ChatStreamView({
                             </strong>
                             <span className={`${styles.pill} ${item.l1Passed ? styles.pillSuccess : styles.pillDanger}`}>
                               {item.l1Passed
-                                ? (isZh ? 'L1 确定性门禁已绿' : 'L1 Gate Green')
-                                : (isZh ? 'L1 未通过' : 'L1 Not Green')}
+                                ? (isZh ? '测试已通过' : 'Tests Passed')
+                                : (isZh ? '测试未通过' : 'Tests Failed')}
                             </span>
                             {item.resolvedFindings.length > 0 && (
                               <span className={`${styles.pill} ${styles.pillSuccess}`}>
@@ -2580,57 +2580,53 @@ export function ChatStreamView({
                           </details>
                         )}
 
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                          <label style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--fw-text-muted)' }}>
-                            {isZh
-                              ? '人工范围裁决 / 指导（可选，将作为权威约束注入 Execute 与 Review）'
-                              : 'Human scope guidance / sign-off note (optional; injected into Execute & Review)'}
-                          </label>
-                          <textarea
-                            className={styles.input}
-                            rows={2}
-                            data-testid={`triage-guidance-${pid}`}
-                            value={guidanceVal}
-                            onChange={e => setTriageGuidance(prev => ({ ...prev, [pid]: e.target.value }))}
-                            placeholder={
-                              isZh
-                                ? '例如：只修复真实契约缺陷（如 F-1/F-2），其余超出契约的测试增强项改为非阻塞建议…'
-                                : 'e.g. Fix only real contract defects (F-1/F-2); treat out-of-contract test hardening as advisory…'
-                            }
-                          />
-                        </div>
-
                         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
                           <button
                             type="button"
                             className={`${styles.btn} ${styles.btnPrimary} ${styles.btnSm}`}
                             data-testid={`triage-retry-${pid}`}
+                            title={isZh ? '重新修改代码并再次审查' : 'Re-run implementation and review'}
                             disabled={snap.busyAction !== null}
                             onClick={() => void runTriage('retry')}
                           >
-                            {isZh ? '带指导重试' : 'Retry with Guidance'}
+                            {isZh ? '重新执行' : 'Retry'}
                           </button>
                           <button
                             type="button"
                             className={`${styles.btn} ${styles.btnSm}`}
                             data-testid={`triage-replan-${pid}`}
+                            title={isZh ? '交由规划师调整本步需求或验收标准' : 'Ask planner to revise this packet spec'}
                             disabled={snap.busyAction !== null}
                             onClick={() => void runTriage('replan')}
                           >
-                            {isZh ? '发起单包契约修订' : 'Revise Packet Contract'}
+                            {isZh ? '修改要求' : 'Revise Spec'}
                           </button>
                           {item.l1Passed && (
                             <button
                               type="button"
                               className={`${styles.btn} ${styles.btnSm}`}
                               data-testid={`triage-accept-${pid}`}
+                              title={isZh ? '测试已通过，跳过审查直接合并' : 'Tests passed — skip AI review and merge'}
                               disabled={snap.busyAction !== null}
                               onClick={() => void runTriage('accept')}
                             >
-                              {isZh ? 'L1 已绿 · 人工签核放行' : 'L1 Green · Human Sign-Off'}
+                              {isZh ? '直接通过' : 'Accept'}
                             </button>
                           )}
                         </div>
+
+                        <input
+                          type="text"
+                          className={styles.input}
+                          data-testid={`triage-guidance-${pid}`}
+                          value={guidanceVal}
+                          onChange={e => setTriageGuidance(prev => ({ ...prev, [pid]: e.target.value }))}
+                          placeholder={
+                            isZh
+                              ? '可选：附一句给 AI 的说明或放行理由（不填可直接点上方按钮）'
+                              : 'Optional: add a note for AI or sign-off reason (leave blank to click directly)'
+                          }
+                        />
 
                         {errText && (
                           <div

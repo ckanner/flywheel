@@ -7,7 +7,7 @@ export const ADAPTER = Object.freeze({ package: 'dsh-subagent-claude-code-pro', 
 export const COMPATIBLE_ADAPTER_VERSIONS = Object.freeze(new Set(['0.7.1']));
 export const LIMITS = Object.freeze({ requestBytes: 16 * 1024 * 1024, promptBytes: 1024 * 1024,
   maxImages: 4, imageBytes: 4 * 1024 * 1024, imageTotalBytes: 8 * 1024 * 1024,
-  machineOutputBytes: 1024 * 1024, progressBytes: 1024 * 1024,
+  machineOutputBytes: 16 * 1024 * 1024, progressBytes: 1024 * 1024,
   receiptFrameBytes: 8 * 1024 * 1024, admissionMs: 10000 });
 const require = createRequire(import.meta.url);
 

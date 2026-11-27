@@ -316,11 +316,15 @@ All thresholds default to disabled. Flywheel does not implicitly rebuild scoped 
 
 When a packet escalates to `inbox` (for example after non-converging review rounds), never edit `state.json` by hand. Use the persistent bottom-of-stream **Human Triage** card in DSH Desktop or the interactive CLI (`flywheel packet <taskDir> --id <packet-id> (--retry|--replan|--accept) --reason <text> [--guidance <text>]`):
 
-- **Retry with guidance (`retry`)**: persists optional authoritative `human-guidance` (injected into both Execute and Review), clears `failed-attempts` and the spin signature, records a `human-triage` boundary in `retry-history`, and re-arms the packet as `pending`.
-- **Single-packet contract revision (`replan`)**: authorizes the Plan Loop to revise the packet contract with the human reason and optional guidance, persists contracts, invalidates stale evidence, and re-arms the packet as `pending`.
-- **Human sign-off (`accept`)**: permitted **only** when deterministic L1 verification (`currentL1Evidence`) is passing on the exact current candidate; records `human-signoff` bound to that candidate fingerprint and commits/merges the unit.
+- **Retry (`retry`)**: persists optional authoritative `human-guidance` (injected into both Execute and Review), clears `failed-attempts` and the spin signature, records a `human-triage` boundary in `retry-history`, and re-arms the packet as `pending`.
+- **Revise Spec (`replan`)**: authorizes the Plan Loop to revise the packet contract with the human reason and optional note, persists contracts, invalidates stale evidence, and re-arms the packet as `pending`.
+- **Accept (`accept`)**: permitted **only** when deterministic L1 verification (`currentL1Evidence`) is passing on the exact current candidate; records `human-signoff` bound to that candidate fingerprint and commits/merges the unit.
 
 All three actions require verified human proof (`FLYWHEEL_PACKET_USER_ACTION` from the DSH host command boundary or an interactive controlling TTY) and are never exposed to LLM model tools.
+
+### Read-only output-limit defense and safe retry
+
+Flywheel maintains a managed `.ignore` file in `docs/<slug>/` (classified in the commit-volatile ledger set) so `rg`/`fd` skip multi-MB `.traces/`, `.sessions/`, and runtime logs, and aligns Pro/native worker bridge `machineOutputBytes` to 16 MiB alongside Go's 16 MiB watchdog buffer. When a verified `read-only` invocation terminates with confirmed process-group cleanup (`cleanup.confirmed = true`) strictly due to an adapter `output-limit` truncation AND both the candidate workspace fingerprint and role guard are unchanged, the orchestrator retires the damaged thread and lets bounded transport retry start a fresh session instead of deadlocking in `blocked`. Write-capable roles or any candidate/guard mutation remain strictly `blocked`.
 
 A rebuild records its reason and generation and hands over current contracts, workspace, valid reports, verification, and structured feedback. It never imports another role's private transcript or issues an unmetered model-compression call. A returning Reviewer must still inspect the entire current candidate.
 

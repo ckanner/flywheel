@@ -458,6 +458,18 @@ func parseCodexProReceipt(raw json.RawMessage, request codexProStart) (parsed co
 			parsed.Session.Dispatch, parsed.Session.Outcome, parsed.Session.UsageStatus = "not-dispatched", "failed", "complete"
 			parsed.Usage = &Usage{}
 		}
+		if request.PermissionMode == "read-only" && parsed.CleanupConfirmed && parsed.Truncated &&
+			executionMatches && execution.Dispatch == "accepted" &&
+			execution.Failure != nil && execution.Failure.Category == "output-limit" &&
+			receipt.Outcome != nil && validateCodexProReadyConfiguration(receipt.Outcome.Configuration, request) == nil {
+			// Attested read-only sandbox + confirmed process-group cleanup +
+			// explicit adapter output-limit: retire the damaged thread and
+			// record a concrete failed outcome so the machine layer can verify
+			// unchanged candidate/guard and retry cleanly with a fresh session.
+			parsed.Session.Dispatch, parsed.Session.Outcome = "dispatched", "failed"
+			parsed.Session.ResumeCandidate = false
+			parsed.Session.ResumeAccepted = request.ThreadID != ""
+		}
 		parsed.Error = codexProFailureMessage(category, diagnostic, stopReason, execution)
 		return parsed
 	}
@@ -802,7 +814,9 @@ func RunCodexPro(a CodexProArgs) Result {
 		case out.CleanupError != "":
 			message = strings.TrimPrefix(message+"; "+out.CleanupError, "; ")
 		case out.Truncated:
-			message = "Codex Pro worker output was truncated"
+			if out.Session.Dispatch == "dispatched" && out.Session.Outcome == "failed" && out.ErrorCode == "" {
+				out.ErrorCode = errs.TRANSPORT
+			}
 		case message == "":
 			message = "Codex Pro worker exited without successful process completion: " + strings.TrimSpace(out.Stderr)
 		}

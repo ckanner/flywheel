@@ -9,6 +9,7 @@ import (
 
 	"github.com/ckanner/flywheel/internal/config"
 	"github.com/ckanner/flywheel/internal/drivers"
+	"github.com/ckanner/flywheel/internal/errs"
 	"github.com/ckanner/flywheel/internal/state"
 	"github.com/stretchr/testify/require"
 )
@@ -263,6 +264,47 @@ func TestSessionConfirmedUnsentResumeRetiresOversizedThreadForRebuild(t *testing
 	})
 	require.NoError(t, err)
 	require.Equal(t, "rebuild", c.sessionRecord("execute", a.PacketID).Action)
+}
+
+func TestSessionReadOnlyOutputLimitRecoversCleanlyUnlessWorkspaceMutated(t *testing.T) {
+	_, c := sessionFixture(t)
+	a := sessionArgs(c)
+	a.PermissionMode = "read-only"
+	// Seed L1 evidence so review sessionGuard succeeds.
+	ps := c.State.Packets[a.PacketID]
+	ps.Evidence.L1 = map[string]any{"pass": true}
+	c.save()
+
+	// 1. Unchanged candidate + guard on attested read-only output-limit -> received (not blocked), retired for fresh rebuild.
+	_, err := c.invokeScoped("review", a.PacketID, a, func(a drivers.CallArgs) drivers.Result {
+		return drivers.MockResult(func(r *drivers.Result) {
+			code := 1
+			msg := "codex-pro: protocol frame or retained output exceeded 16777216 bytes"
+			r.ExitCode, r.Settled, r.Truncated = &code, false, true
+			r.ErrorCode, r.ErrorMessage = errs.TRANSPORT, &msg
+			r.Session = &drivers.SessionOutcome{Protocol: "codex-pro/0.10.2/worker-v3", RequestID: a.RequestID, SessionID: "th-ro-1",
+				Dispatch: "dispatched", Outcome: "failed", CleanupConfirmed: true, UsageStatus: "partial", ResumeCandidate: false}
+		})
+	})
+	require.NoError(t, err)
+	rec := c.sessionRecord("review", a.PacketID)
+	require.Equal(t, "received", rec.Last.Status)
+	require.False(t, rec.ResumeCandidate)
+	c.consumeSession("review", a.PacketID)
+
+	// 2. If candidate mutated during a truncated invocation, it must strictly block.
+	_, err = c.invokeScoped("review", a.PacketID, a, func(a drivers.CallArgs) drivers.Result {
+		writeFile(t, filepath.Join(c.Cwd, "mutated-during-truncated.txt"), "dirty\n")
+		return drivers.MockResult(func(r *drivers.Result) {
+			code := 1
+			r.ExitCode, r.Settled, r.Truncated = &code, false, true
+			r.ErrorCode = errs.TRANSPORT
+			r.Session = &drivers.SessionOutcome{Protocol: "codex-pro/0.10.2/worker-v3", RequestID: a.RequestID, SessionID: "th-ro-2",
+				Dispatch: "dispatched", Outcome: "failed", CleanupConfirmed: true, UsageStatus: "partial", ResumeCandidate: false}
+		})
+	})
+	require.Error(t, err)
+	require.Equal(t, "blocked", c.sessionRecord("review", a.PacketID).Last.Status)
 }
 
 func TestSessionDurableReceiptReplaysCASWithoutDispatchOrDoubleAccounting(t *testing.T) {

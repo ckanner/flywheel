@@ -439,6 +439,7 @@ test('public request validation always fixes fresh sessions and bounded output',
   const request = machineRequest(f.request, await loadAdapter(), f.env);
   assert.equal(request.threadMode, 'ephemeral');
   assert.equal(request.threadId, undefined);
+  assert.equal(LIMITS.machineOutputBytes, 16 * 1024 * 1024);
   assert.equal(request.maxOutputBytes, LIMITS.machineOutputBytes);
   assert.equal(request.command, fixture);
 });

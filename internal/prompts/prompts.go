@@ -301,7 +301,7 @@ func BuildReviewPrompt(a ReviewArgs) string {
 		"- Code quality, project conventions, design intent, security hazards.",
 		"- Test assertion quality: coverage proves execution, not assertion validity. Unit/regression test changes are expected; reject weakened assertions, bypassed checks, and changes to protected acceptance oracles.",
 		"- Read-only review: inspect the candidate worktree and report findings. Do not edit files or run mutating commands.",
-		"- Batch inspection (Code Mode efficiency): prefer a single read-only script (node/python/shell) to verify file exports, symbols, coverage, and assertions in one round-trip instead of many serial reads.",
+		"- Batch inspection (Code Mode efficiency): prefer a single read-only script (node/python/shell) to verify file exports, symbols, coverage, and assertions in one round-trip instead of many serial reads. Keep command stdout concise and bounded (summaries, --stat, targeted slices/assertions) — never dump entire logs, lockfiles, build artifacts, or orchestrator traces to stdout.",
 		"- Coverage matrix: every numbered requirement above must have at least one verification + evidence; a missing one means return.",
 		"- Scope: the diff must stay within the packet boundaries; any change to contract files (spec.md / task-packet-*.md) means return.",
 		"- Never block on orchestrator metadata: state.json, ledger directories, and Flywheel delivery receipts are owned by the Go orchestrator (executors are forbidden to edit them). Never fail review because a worktree copy of state.json lacks an updated delivery checkpoint.",

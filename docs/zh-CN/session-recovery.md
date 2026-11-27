@@ -262,11 +262,15 @@ PID 推断。回执缺失、超限、损坏、身份不匹配、进程或进程�
 
 当单元因评审未收敛等原因升级到 `inbox` 时，严禁手改 `state.json`。可通过 DSH 桌面端主流程底部的**人工处置卡片**或交互式 CLI（`flywheel packet <taskDir> --id <packet-id> (--retry|--replan|--accept) --reason <text> [--guidance <text>]`）完成三项一等操作：
 
-- **带指导重试（`retry`）**：持久化可选的权威 `human-guidance`（同时注入 Execute 与 Review 提示词），重置 `failed-attempts` 与空转签名，在 `retry-history` 写入 `human-triage` 边界重置返修计数，将单元重新武装为 `pending`。
-- **发起单包契约修订（`replan`）**：授权 Plan Loop 结合人工理由与指导修订该单元契约，持久化契约、清除陈旧证据并重新武装为 `pending`。
-- **人工签核放行（`accept`）**：**仅当**确定性 L1 门禁（`currentL1Evidence`）在当前候选上全绿时允许执行；记录绑定该候选指纹的 `human-signoff` 并完成提交与合并。
+- **重新执行（`retry`）**：持久化可选的权威 `human-guidance`（同时注入 Execute 与 Review 提示词），重置 `failed-attempts` 与空转签名，在 `retry-history` 写入 `human-triage` 边界重置返修计数，将单元重新武装为 `pending`。
+- **修改要求（`replan`）**：授权 Plan Loop 结合人工理由与可选说明修订该单元契约，持久化契约、清除陈旧证据并重新武装为 `pending`。
+- **直接通过（`accept`）**：**仅当**确定性 L1 门禁（`currentL1Evidence`）在当前候选上全绿时允许执行；记录绑定该候选指纹的 `human-signoff` 并完成提交与合并。
 
 以上三项操作均要求经校验的人工证明（DSH 宿主命令边界生成的 `FLYWHEEL_PACKET_USER_ACTION` 或交互式控制终端确认），绝不暴露给 LLM 模型工具。
+
+### 只读调用的输出截断防护与自动自愈
+
+Flywheel 在任务目录 `docs/<slug>/` 自动维护面向 `rg`/`fd` 的运行期 `.ignore`（列入易变账本集，不进入单元提交），避免只读巡检误扫多 MB 级的 `.traces/`、`.sessions/` 与运行日志；同时将 Pro/原生适配器桥接层的 `machineOutputBytes` 与 Go 侧 16 MiB 缓冲对齐。对已证实生效沙箱为 `read-only`、进程组已确认清理（`cleanup.confirmed = true`）、明确因适配器 `output-limit` 截断，且事后核验工作区候选与角色守卫均零变动的调用，编排器将自动废弃受损线程并通过常规受限传输重试新建会话，而不再锁死在 `blocked`；写权限角色或存在任何候选/守卫变更时仍严格保持 `blocked`。
 
 重建保留明确原因与 generation，并用当前 Spec、packet、工作区、合法报告、验证与结构化反馈交接。它不读取另一个角色的私有 transcript，不以“压缩成功”伪造模型事实，也不另发未计量的模型压缩调用。Review 即使续用自己历史，仍须检查完整当前候选。
 
