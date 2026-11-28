@@ -5,8 +5,10 @@ import { validPlanningCommand } from '../src/planning-control.js';
 import {
   annotatePlanSteps,
   buildMilestoneTimeline,
+  buildPlanningScopeGroups,
   computeMilestoneStartTimestamps,
   extractMilestoneIdFromScope,
+  formatLocalizedStepStatus,
   formatRetryPlanningLabel,
   inferMilestoneByTimestamp,
   isPacketEffectivelyRunning,
@@ -243,4 +245,102 @@ test('v0.43.1 invariants: compact milestone IDs, chronological attribution, supe
   // Packet in executing state during L1 check (no active model trace) still reports running when taskRunning=true.
   assert.equal(isPacketEffectivelyRunning({ id: 'M02-T01', status: 'executing' }, [], true), true);
   assert.equal(isPacketEffectivelyRunning({ id: 'M02-T01', status: 'executing' }, [], false), false);
+});
+
+test('v0.43.3 invariants: chronological episode segmentation for shared planning:milestone/M-02 scope', () => {
+  const traces = [
+    makeTrace({ id: 'p0', role: 'plan', scope: 'planning:milestone/M-02', startedAt: '2026-11-27T11:00:00Z' }),
+    makeTrace({ id: 'r0', role: 'plan-review', scope: 'planning:milestone/M-02', startedAt: '2026-11-27T11:05:00Z', preview: '{"verdict":"pass"}' }),
+    makeTrace({ id: 'e1', role: 'execute', scope: 'M02-T01', startedAt: '2026-11-27T11:10:00Z' }),
+    makeTrace({ id: 'p1', role: 'plan', scope: 'planning:milestone/M-02', startedAt: '2026-11-27T11:20:00Z' }),
+    makeTrace({ id: 'r1', role: 'plan-review', scope: 'planning:milestone/M-02', startedAt: '2026-11-27T11:25:00Z', preview: '{"verdict":"pass"}' }),
+    makeTrace({ id: 'e2', role: 'execute', scope: 'M02-T02', startedAt: '2026-11-27T11:30:00Z' }),
+    makeTrace({ id: 'e3', role: 'execute', scope: 'M02-T03', startedAt: '2026-11-27T11:40:00Z' }),
+    makeTrace({ id: 'p2', role: 'plan', scope: 'planning:milestone/M-02', startedAt: '2026-11-27T11:50:00Z', status: 'running', running: true }),
+  ];
+  const requests = [
+    { id: 'retry-m02', scope: 'milestone', 'scope-id': 'M-02', status: 'completed', 'created-at': '2026-11-27T10:59:00Z' },
+    { id: 'engine-1-17', scope: 'milestone', 'scope-id': 'M-02', status: 'completed', 'created-at': '2026-11-27T11:19:00Z', feedback: 'packet M02-T01 verification-gap' },
+    { id: 'engine-1-19', scope: 'milestone', 'scope-id': 'M-02', status: 'running', 'created-at': '2026-11-27T11:49:00Z', feedback: 'packet M02-T03 failed L1' },
+  ];
+  const planTraces = traces.filter(t => t.role === 'plan' || t.role === 'plan-review');
+  const groups = buildPlanningScopeGroups({ traces: planTraces, allTraces: traces, requests, isZh: true });
+
+  assert.equal(groups.length, 3, 'shared planning:milestone/M-02 scope must segment into 3 chronological episodes');
+  assert.equal(groups[0].isMilestonePlan, true);
+  assert.equal(groups[0].triggerPacketId, null);
+  assert.equal(groups[0].requestId, 'retry-m02');
+
+  assert.equal(groups[1].isMilestonePlan, false);
+  assert.equal(groups[1].triggerPacketId, 'M02-T01');
+  assert.equal(groups[1].requestId, 'engine-1-17');
+
+  assert.equal(groups[2].isMilestonePlan, false);
+  assert.equal(groups[2].triggerPacketId, 'M02-T03');
+  assert.equal(groups[2].requestId, 'engine-1-19');
+  assert.equal(groups[2].running, true);
+  assert.equal(groups[2].tone, 'running');
+});
+
+test('v0.43.3 invariants: blocked M-03 planning never renders gray 进行中 or green 已完成 (parent-child invariant)', () => {
+  const m03Traces = [
+    makeTrace({ id: 'm3-p1', role: 'plan', scope: 'planning:milestone/M-03', startedAt: '2026-11-27T19:00:00Z', status: 'completed', running: false }),
+    makeTrace({ id: 'm3-r1', role: 'plan-review', scope: 'planning:milestone/M-03', startedAt: '2026-11-27T19:05:00Z', status: 'completed', running: false, preview: '{"verdict":"revise"}' }),
+    makeTrace({ id: 'm3-p2', role: 'plan', scope: 'planning:milestone/M-03', startedAt: '2026-11-27T19:10:00Z', status: 'completed', running: false, preview: '⚠ failed to construct executor: unknown model key MODEL_PLACEHOLDER_M532' }),
+  ];
+  const requests = [
+    { id: 'engine-1-20', scope: 'milestone', 'scope-id': 'M-03', status: 'blocked', 'created-at': '2026-11-27T18:59:00Z', feedback: 'failed to construct executor' },
+  ];
+  const groups = buildPlanningScopeGroups({ traces: m03Traces, allTraces: m03Traces, requests, isZh: true });
+  assert.equal(groups.length, 1);
+  assert.equal(groups[0].requestId, 'engine-1-20');
+  assert.equal(groups[0].tone, 'danger', 'blocked milestone planning request must map to danger tone, never ok');
+  assert.equal(groups[0].statusLabel, '规划阻塞');
+
+  const timeline = buildMilestoneTimeline({
+    milestonesMap: {
+      'M-01': { status: 'closed' },
+      'M-02': { status: 'closed' },
+      'M-03': { status: 'in-progress' },
+      'M-04': { status: 'pending' },
+    },
+    designMilestones: [
+      { id: 'M-01', title: 'Scaffold' },
+      { id: 'M-02', title: 'Core' },
+      { id: 'M-03', title: 'Canvas' },
+      { id: 'M-04', title: 'HUD' },
+    ],
+    currentMilestone: 'M-03',
+    packets: [],
+    planGroups: groups,
+    traces: m03Traces,
+    requests,
+    taskStatus: 'paused',
+    taskRunning: false,
+    planningPhase: 'blocked',
+    isZh: true,
+  });
+
+  const m03 = timeline.milestones.find(m => m.id === 'M-03');
+  const m04 = timeline.milestones.find(m => m.id === 'M-04');
+  assert.ok(m03 && m04);
+  assert.equal(m03.status, 'blocked');
+  assert.equal(m03.tone, 'danger', 'M-03 must render red danger, NEVER gray neutral');
+  assert.equal(m03.statusLabel, '规划阻塞', 'M-03 must render 规划阻塞, NEVER 进行中');
+  assert.equal(m03.isRunning, false);
+  assert.equal(m03.hasBlockedPlanning, true);
+  assert.equal(m04.status, 'pending');
+  assert.equal(m04.statusLabel, '待开始');
+  assert.equal(m04.totalDurationMs, 0);
+});
+
+test('v0.43.3 invariants: unified status vocabulary eliminates 待执行/实时流 and enforces paused executing truth', () => {
+  assert.deepEqual(formatLocalizedStepStatus('l1-failed', false, true, false), { label: '测试未通过', tone: 'warn' });
+  assert.deepEqual(formatLocalizedStepStatus('l1-failed', false, true, true), { label: '修订中', tone: 'running' });
+  assert.deepEqual(formatLocalizedStepStatus('l1-passed', false, true, false), { label: '测试已通过', tone: 'ok' });
+  assert.deepEqual(formatLocalizedStepStatus('review-failed', false, true, false), { label: '待返修', tone: 'warn' });
+  assert.deepEqual(formatLocalizedStepStatus('executing', false, true, false), { label: '已暂停', tone: 'warn' });
+  assert.deepEqual(formatLocalizedStepStatus('executing', true, true, false), { label: '进行中', tone: 'running' });
+  assert.deepEqual(formatLocalizedStepStatus('pending', false, true, false), { label: '待开始', tone: 'neutral' });
+  assert.deepEqual(formatLocalizedStepStatus('', false, true, false), { label: '待开始', tone: 'neutral' });
 });

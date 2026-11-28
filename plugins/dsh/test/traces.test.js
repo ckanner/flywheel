@@ -614,18 +614,26 @@ test('Main Stream renders Stage 3 packet execute/review micro-timeline and place
   assert.match(timeline.textContent, /执行 #1.*审查 #1.*0\.68.*执行 #2.*审查 #2.*0\.76/);
   assert.ok(timeline.querySelector('[data-testid="packet-revision-link-engine-1-11"]'), 'expected plan revision chip linked on packet timeline');
 
-  const revSection = ui.container.querySelector('[data-testid="mid-exec-plan-revisions"]');
-  assert.ok(revSection, 'expected mid-execution plan revision section');
+  const pktWrapper = ui.container.querySelector('[data-testid="packet-wrapper-M01-T02"]');
+  const revSection = ui.container.querySelector('[data-testid="packet-revisions-M01-T02"]');
+  assert.ok(pktWrapper && revSection, 'expected packet-triggered mid-execution plan revision co-located under M01-T02');
+  assert.ok(pktWrapper.contains(revSection), 'expected plan revision co-located inside packet-wrapper-M01-T02');
   assert.match(revSection.textContent, /engine-1-11/);
   assert.match(revSection.textContent, /M01-T02/);
   assert.match(revSection.textContent, /missing exports/);
+  const pktCard = ui.container.querySelector('[data-testid="packet-card-M01-T02"]');
+  assert.match(pktCard.textContent, /修订中/, 'packet with running local plan revision should show 修订中');
 
-  // Verify chronological DOM order: initial planning -> Stage 3 wave -> mid-execution plan revision
+  // Verify chronological DOM order: initial planning -> Stage 3 wave -> M01-T02 shell -> co-located plan revision
   const fullHtml = ui.container.innerHTML;
   const idxInitPlan = fullHtml.indexOf('agent-card-call-plan-init');
   const idxWave = fullHtml.indexOf('flywheel-wave-1');
-  const idxMidRev = fullHtml.indexOf('mid-exec-plan-revisions');
-  assert.ok(idxInitPlan > 0 && idxWave > idxInitPlan && idxMidRev > idxWave, 'mid-execution plan revisions must appear chronologically below Stage 3 waves');
+  const idxShell = fullHtml.indexOf('packet-shell-M01-T02');
+  const idxMidRev = fullHtml.indexOf('packet-revisions-M01-T02');
+  assert.ok(
+    idxInitPlan > 0 && idxWave > idxInitPlan && idxShell > idxWave && idxMidRev > idxShell,
+    'packet-triggered mid-execution plan revisions must appear chronologically right below their triggering packet',
+  );
 });
 
 test('Model space grammar, 3-pill Telemetry Dock (Main & SubSession), and @ mention autocomplete with atomic pill deletion', async t => {

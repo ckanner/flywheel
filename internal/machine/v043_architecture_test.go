@@ -2,6 +2,7 @@ package machine
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -364,9 +365,88 @@ func TestV0431SystemInvariantsRetrySupersessionInboxL1AnchorContextAndConciseMem
 	assert.False(t, isConciseToolchainCommand("node -e 'console.log(1)'"))
 	assert.False(t, isConciseToolchainCommand("python3 -c 'print(1)'"))
 
-	// 5. packetEscalationFeedback never returns literal "null".
+	// 5. packetEscalationFeedback never returns literal "null" and compacts verbose L1 command output.
 	assert.Equal(t, "{}", packetEscalationFeedback(nil))
 	assert.Equal(t, "{}", packetEscalationFeedback(&state.PacketState{}))
 	assert.Contains(t, packetEscalationFeedback(&state.PacketState{Evidence: state.Evidence{Review: map[string]any{"verdict": "return"}}}), `"verdict":"return"`)
 	assert.Contains(t, packetEscalationFeedback(&state.PacketState{LastFeedback: map[string]any{"error-code": "L1_FAILED"}}), `"L1_FAILED"`)
+	hugeL1Feedback := packetEscalationFeedback(&state.PacketState{
+		LastFeedback: map[string]any{
+			"error-code":      "L1_FAILED",
+			"failed-commands": []any{"npm run test:coverage"},
+			"l1":              map[string]any{"commands": cmds},
+		},
+	})
+	assert.Contains(t, hugeL1Feedback, `"failed-l1-details"`)
+	assert.Contains(t, hugeL1Feedback, "[truncated]")
+	assert.Less(t, len(hugeL1Feedback), 4000, "escalation feedback must stay compact instead of embedding raw L1 dumps")
+}
+
+func TestV0433FirstReviewGraceAndWirePromptBytes(t *testing.T) {
+	// 1. First-review grace: when prior failures were L1-only (2 L1 failures) and
+	//    Review #1 returns on attempt 3/3 (reviewReturnCount == 1, even with >2 open
+	//    findings where convergence-grace would NOT fire), Execute receives +1 dedicated
+	//    first-review-grace fix attempt instead of escalating to inbox on its very first review.
+	fx := newGitFixture(t)
+	sd := happyDrivers()
+	packetText := strings.Replace(
+		fixturePacket("M01-T01", "R-01"),
+		`    - {cmd: "test -f build/M01-T01.txt", expect: "exit 0"}`,
+		"    - {cmd: \"test -f build/M01-T01.txt\", expect: \"exit 0\"}\n"+
+			"    - {cmd: \"test -f build/l1-flag\", expect: \"exit 0\"}", 1)
+	writeFile(t, filepath.Join(fx.taskDir, "task-packet-M01-T01.md"), packetText)
+
+	m01ExecCalls := 0
+	sd.execFn = func(a drivers.CallArgs) drivers.Result {
+		pid := "M01-T01"
+		if strings.Contains(a.Prompt, "packet-id: M01-T02") {
+			pid = "M01-T02"
+		}
+		if pid == "M01-T01" {
+			m01ExecCalls++
+			writeFile(t, filepath.Join(a.Cwd, "build", "M01-T01.txt"), strings.Repeat("v", m01ExecCalls))
+			if m01ExecCalls >= 3 {
+				writeFile(t, filepath.Join(a.Cwd, "build", "l1-flag"), "ready")
+			}
+			writeDoneReportFile(t, a.TaskDir, pid)
+			return drivers.MockResult(nil)
+		}
+		return sd.mock.Execute(a)
+	}
+	m01RevCalls := 0
+	sd.reviewFn = func(a drivers.CallArgs) drivers.Result {
+		if strings.Contains(a.Prompt, "M01-T01") {
+			m01RevCalls++
+			if m01RevCalls == 1 {
+				return textResult(`{"verdict":"return","score":0.5,"reasons":["fix F-1..F-3"],"findings":[` +
+					`{"id":"F-1","severity":"major","target":"a.ts:1","evidence":"e1","fix":"f1","status":"open"},` +
+					`{"id":"F-2","severity":"major","target":"a.ts:2","evidence":"e2","fix":"f2","status":"open"},` +
+					`{"id":"F-3","severity":"major","target":"a.ts:3","evidence":"e3","fix":"f3","status":"open"}]}`)
+			}
+			return passVerdict()
+		}
+		return passVerdict()
+	}
+
+	summary, err := RunTask(runOpts(fx, sd.set()))
+	require.NoError(t, err)
+	assert.Equal(t, "completed", summary.Status)
+	st := loadFixtureState(t, fx)
+	ps := st.Packets["M01-T01"]
+	assert.Equal(t, "completed", ps.Status)
+	assert.Equal(t, 4, m01ExecCalls, "Execute must receive +1 first-review-grace attempt after 2 L1 failures + 1st review return")
+	assert.Equal(t, 2, m01RevCalls)
+	assert.True(t, gracePolicyUsed(ps, "first-review-grace"))
+	assert.Equal(t, 0, ps.PlanRevisions)
+
+	// 2. recordSpawnMetrics records WirePromptBytes when present instead of pre-incremental full prompt length.
+	_, c := newReviewedFixture(t)
+	resWithWire := drivers.Result{Settled: true, ExitCode: new(0), WirePromptBytes: 42}
+	c.recordSpawnMetrics(spawnMetricsArgs{
+		role: "execute", packetID: "M01-T01", model: "m", channel: "ch",
+		prompt: strings.Repeat("x", 500), result: &resWithWire,
+	})
+	rawMetrics, err := os.ReadFile(filepath.Join(c.TaskDir, "metrics.jsonl"))
+	require.NoError(t, err)
+	assert.Contains(t, string(rawMetrics), `"prompt-bytes":42`)
 }

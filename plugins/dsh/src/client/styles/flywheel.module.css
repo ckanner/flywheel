@@ -3537,6 +3537,10 @@
   border-color: var(--fw-warn-border);
 }
 
+.milestoneBlockDanger {
+  border-color: var(--fw-danger-border);
+}
+
 .milestoneBlockPending {
   border-style: dashed;
   opacity: 0.78;

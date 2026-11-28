@@ -249,8 +249,10 @@ test('SPEC-10 to SPEC-14: Stage 1 blocked separation, bottom Milestone triage & 
   assert.match(bottomBlocked.textContent, /output-limit truncated/);
   assert.ok(ui.container.querySelector('[data-testid="bottom-blocked-details-call-blocked-rev"]'));
 
+  const msBlock = ui.container.querySelector('[data-testid="milestone-block-M-01"]');
   const msCard = ui.container.querySelector('[data-testid="milestone-triage-card-M-01"]');
-  assert.ok(msCard, 'expected milestone triage card in bottom escalation summary');
+  assert.ok(msBlock && msCard, 'expected co-located milestone triage card inside milestone block M-01');
+  assert.ok(msBlock.contains(msCard), 'expected milestone triage card co-located inside milestone-block-M-01');
   assert.match(msCard.textContent, /0\.78/);
   assert.ok(ui.container.querySelector('[data-testid="milestone-triage-retry-M-01"]'));
   const acceptBtn = ui.container.querySelector('[data-testid="milestone-triage-accept-M-01"]');

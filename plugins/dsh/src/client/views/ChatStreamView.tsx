@@ -5,14 +5,12 @@ import { HtmlPreviewFrame } from '../components/HtmlPreviewFrame.tsx';
 import { TriageCard } from '../components/TriageCard.tsx';
 import { formatModelBadge, normalizePackets, resolveCandidateLabels, resolvePlanningView } from '../planning.ts';
 import {
-  annotatePlanSteps,
   buildMilestoneTimeline,
-  extractMilestoneIdFromScope,
+  buildPlanningScopeGroups,
   formatLocalizedStepStatus,
   formatRetryPlanningLabel,
   isPacketEffectivelyRunning,
   type PlanScopeGroup,
-  resolvePlanGroupTone,
   resolveRetryPlanningTarget,
   type SemanticTone,
 } from '../workflowTimeline.ts';
@@ -73,7 +71,7 @@ function formatClock(iso?: string): string {
 }
 
 function formatDurationShort(ms?: number | null): string {
-  if (typeof ms !== 'number' || !Number.isFinite(ms) || ms < 0) return '';
+  if (typeof ms !== 'number' || !Number.isFinite(ms) || ms <= 0) return '';
   if (ms < 1000) return `${Math.round(ms)}ms`;
   const s = Math.round(ms / 1000);
   if (s < 60) return `${s}s`;
@@ -122,38 +120,6 @@ function parseReviewStepSignal(tr: TraceSummary): {
   if (tr.status === 'failed' || tr.status === 'blocked') return { tone: 'fail', icon: '✗', scoreLabel: score };
   if (tr.status === 'cancelled') return { tone: 'warn', icon: '⊘', scoreLabel: score };
   return { tone: 'neutral', icon: '·', scoreLabel: score };
-}
-
-function summarizePlanRevisionFeedback(rawFeedback?: string, isZh = true): { packetId: string | null; summary: string } {
-  const text = (rawFeedback || '').trim();
-  if (!text) return { packetId: null, summary: '' };
-  const pktMatch = /\b(M\d+-T\d+)\b/.exec(text);
-  const packetId = pktMatch ? pktMatch[1]! : null;
-  if (text.includes('verification-gap') || text.includes('strengthen')) {
-    return {
-      packetId,
-      summary: isZh
-        ? `${packetId ? `${packetId} ` : ''}审查发现验收缺口（verification-gap），自动退回规划层补强 L1 验收契约`
-        : `${packetId ? `${packetId} ` : ''}verification-gap detected — strengthening acceptance contract`,
-    };
-  }
-  const returnedIdx = text.indexOf('Returned packet ');
-  if (returnedIdx >= 0) {
-    const reasonMatch = /"reasons"\s*:\s*\[\s*"([^"]{1,180})/.exec(text);
-    const reason = reasonMatch ? reasonMatch[1]!.replace(/\\n/g, ' ').replace(/\\"/g, '"') : '';
-    return {
-      packetId,
-      summary: reason
-        ? `${isZh ? '触发原因' : 'Trigger'}：${reason}${reason.length >= 175 ? '…' : ''}`
-        : isZh
-          ? `${packetId ? `${packetId} ` : ''}退回规划层进行契约修订`
-          : `${packetId ? `${packetId} ` : ''}returned to planner for contract revision`,
-    };
-  }
-  return {
-    packetId,
-    summary: text.length > 180 ? `${text.slice(0, 180)}…` : text,
-  };
 }
 
 function groupPlanningTracesIntoRounds(traces: TraceSummary[], isZh: boolean): TimelineRound[] {
@@ -215,21 +181,40 @@ function groupPlanningTracesIntoRounds(traces: TraceSummary[], isZh: boolean): T
   return rounds;
 }
 
-function packetTone(status?: string, hasRunningTrace?: boolean): { dot: string; pill: string; shellExtra: string } {
-  const s = (status ?? '').toLowerCase();
-  if (['done', 'completed', 'passed'].includes(s)) {
-    return { dot: styles.statusDotSuccess, pill: styles.pillSuccess, shellExtra: '' };
-  }
-  if (['running', 'executing', 'reviewing'].includes(s) || (s === 'l1-passed' && hasRunningTrace)) {
-    return { dot: styles.statusDotRunning, pill: styles.pillRunning, shellExtra: styles.runningFlowCard };
-  }
-  if (['failed', 'blocked'].includes(s)) {
-    return { dot: styles.statusDotDanger, pill: styles.pillDanger, shellExtra: styles.packetCardShellDanger };
-  }
-  if (['escalated', 'inbox', 'stopped', 'awaiting_approval'].includes(s)) {
-    return { dot: styles.statusDotWarn, pill: styles.pillWarn, shellExtra: styles.packetCardShellWarn };
-  }
-  return { dot: '', pill: '', shellExtra: '' };
+function packetTone(
+  status?: string,
+  hasRunningTrace?: boolean,
+  isRevising?: boolean,
+): { dot: string; pill: string; shellExtra: string } {
+  const loc = formatLocalizedStepStatus(status, Boolean(hasRunningTrace), true, Boolean(isRevising));
+  const dot =
+    loc.tone === 'running'
+      ? styles.statusDotRunning
+      : loc.tone === 'ok'
+        ? styles.statusDotSuccess
+        : loc.tone === 'danger'
+          ? styles.statusDotDanger
+          : loc.tone === 'warn'
+            ? styles.statusDotWarn
+            : '';
+  const pill =
+    loc.tone === 'running'
+      ? styles.pillRunning
+      : loc.tone === 'ok'
+        ? styles.pillSuccess
+        : loc.tone === 'danger'
+          ? styles.pillDanger
+          : loc.tone === 'warn'
+            ? styles.pillWarn
+            : '';
+  const shellExtra = hasRunningTrace
+    ? styles.runningFlowCard
+    : loc.tone === 'danger'
+      ? styles.packetCardShellDanger
+      : loc.tone === 'warn'
+        ? styles.packetCardShellWarn
+        : '';
+  return { dot, pill, shellExtra };
 }
 
 function traceTone(status: string, running: boolean): { dot: string; pill: string } {
@@ -650,60 +635,13 @@ export function ChatStreamView({
         }
       }
     }
-    const sortedMid = [...midExec].sort((a, b) => {
-      const ta = Date.parse(a.startedAt || a.updatedAt || '') || 0;
-      const tb = Date.parse(b.startedAt || b.updatedAt || '') || 0;
-      return ta - tb;
-    });
     const requests = Array.isArray(planning?.requests) ? planning.requests : [];
-    const groups: PlanScopeGroup[] = [];
-    const byScope = new Map<string, { grp: PlanScopeGroup; reqStatus?: string }>();
-    for (const tr of sortedMid) {
-      const scopeKey = tr.scope || tr.key || tr.id;
-      let entry = byScope.get(scopeKey);
-      if (!entry) {
-        const requestId = scopeKey.replace(/^planning:/, '');
-        const req = requests.find(r => r.id === requestId || `planning:${r.id}` === scopeKey);
-        const { packetId, summary } = summarizePlanRevisionFeedback(req?.feedback, isZh);
-        const scopePkt = packetId || (/\b(M\d+-T\d+)\b/i.exec(requestId)?.[1]?.toUpperCase() ?? null);
-        const milestoneId = extractMilestoneIdFromScope(scopeKey, scopePkt, req);
-        const isMilestonePlan =
-          requestId.startsWith('milestone/') ||
-          (req?.scope === 'milestone' && Boolean(req?.['scope-id']) && !scopePkt);
-        const label = isMilestonePlan && milestoneId
-          ? (isZh ? `里程碑拆包规划 · ${milestoneId}` : `Milestone Plan · ${milestoneId}`)
-          : (isZh ? `计划修订 · ${requestId}` : `Plan Revision · ${requestId}`);
-        const grp: PlanScopeGroup = {
-          scope: scopeKey,
-          requestId,
-          milestoneId,
-          isMilestonePlan,
-          label,
-          triggerPacketId: scopePkt,
-          triggerSummary: summary,
-          items: [],
-          steps: [],
-          running: false,
-          tone: 'ok',
-          statusLabel: isZh ? '已完成' : 'Completed',
-          totalDurationMs: 0,
-        };
-        entry = { grp, reqStatus: req?.status };
-        byScope.set(scopeKey, entry);
-        groups.push(grp);
-      }
-      entry.grp.items.push(tr);
-      if (tr.running) entry.grp.running = true;
-      if (typeof tr.durationMs === 'number' && Number.isFinite(tr.durationMs)) {
-        entry.grp.totalDurationMs += tr.durationMs;
-      }
-    }
-    for (const { grp, reqStatus } of byScope.values()) {
-      grp.steps = annotatePlanSteps(grp.items, isZh);
-      const resolved = resolvePlanGroupTone(grp.steps, reqStatus, grp.running, isZh);
-      grp.tone = resolved.tone;
-      grp.statusLabel = resolved.statusLabel;
-    }
+    const groups = buildPlanningScopeGroups({
+      traces: midExec,
+      allTraces: snap.traces,
+      requests,
+      isZh,
+    });
     return { initialPlanningTraces: initial, midExecPlanRevisions: groups };
   }, [snap.traces, firstExecTs, planning?.requests, isZh]);
 
@@ -728,8 +666,9 @@ export function ChatStreamView({
       taskStatus: snap.state?.status ?? null,
       taskRunning: snap.running,
       planningPhase: planning?.phase ?? null,
+      isZh,
     });
-  }, [resolvedPlanning?.design?.milestones, snap.state, snap.running, packets, midExecPlanRevisions, snap.traces, planning?.requests, planning?.phase]);
+  }, [resolvedPlanning?.design?.milestones, snap.state, snap.running, packets, midExecPlanRevisions, snap.traces, planning?.requests, planning?.phase, isZh]);
 
   const timelineRounds = useMemo(
     () => groupPlanningTracesIntoRounds(initialPlanningTraces, isZh),
@@ -1783,8 +1722,14 @@ export function ChatStreamView({
                   </div>
                 )}
 
-                {/* Planning Blocked or Interrupted Request Recovery Card */}
-                {!isPartialDualDraft && (resolvedPlanning?.isBlocked || (!snap.running && Boolean(retryTarget.cancellableRequestId))) && (
+                {/* Planning Blocked or Interrupted Request Recovery Card (only in Stage 1 when not co-located under a Milestone block) */}
+                {!isPartialDualDraft &&
+                  (resolvedPlanning?.isBlocked || (!snap.running && Boolean(retryTarget.cancellableRequestId))) &&
+                  !(
+                    !snap.running &&
+                    retryTarget.scope === 'milestone' &&
+                    milestoneTimeline.milestones.some(m => m.hasBlockedPlanning && m.id === retryTarget.scopeId)
+                  ) && (
                   <div className={styles.blockedBanner} data-testid="main-planning-blocked">
                     <div className={styles.blockedHeader}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -2363,6 +2308,453 @@ export function ChatStreamView({
               );
             };
 
+            const inboxTriageByPacketId = new Map(inboxTriagePackets.map(item => [item.packet.id, item]));
+            const escalatedMilestoneById = new Map(escalatedMilestones.map(item => [item.id, item]));
+
+            const renderPacketTriageCard = (item: (typeof inboxTriagePackets)[number]) => {
+              const pid = item.packet.id;
+              const guidanceVal = triageGuidance[pid] ?? item.existingGuidance;
+              const errText = triageErrors[pid] ?? '';
+              const pktTraces = packetTracesMap.get(pid) ?? [];
+              const latestReview = [...pktTraces].reverse().find(tr => tr.role === 'review') ?? pktTraces[pktTraces.length - 1] ?? null;
+
+              const runTriage = async (action: 'retry' | 'replan' | 'accept') => {
+                const defaultReasons: Record<'retry' | 'replan' | 'accept', string> = {
+                  retry: isZh
+                    ? '人工审阅后重新武装该单元重试'
+                    : 'Human triaged inbox packet and re-armed for retry',
+                  replan: isZh
+                    ? '人工授权发起单包契约修订'
+                    : 'Human authorized single-packet contract revision',
+                  accept: isZh
+                    ? 'L1 确定性门禁已绿，人工签核放行并提交合并'
+                    : 'L1 deterministic gate green; human signed off to accept and merge',
+                };
+                const reasonText =
+                  action === 'accept'
+                    ? (guidanceVal.trim() || defaultReasons.accept)
+                    : defaultReasons[action];
+                setTriageErrors(prev => {
+                  const next = { ...prev };
+                  delete next[pid];
+                  return next;
+                });
+                const res = await store.triagePacket(
+                  action,
+                  pid,
+                  reasonText,
+                  action === 'accept' ? undefined : guidanceVal,
+                );
+                const ctrl = res?.['packet-control'] ?? res?.packetControl;
+                if (res?.ok && (ctrl ? ctrl.applied !== false : true)) {
+                  if (action === 'retry' || action === 'accept') {
+                    await store.startRun();
+                  }
+                } else {
+                  const msg =
+                    ctrl?.message ||
+                    (typeof res?.error === 'string' ? res.error : '') ||
+                    (isZh ? '处置请求未生效，请刷新状态后重试。' : 'Triage action was not applied.');
+                  setTriageErrors(prev => ({ ...prev, [pid]: msg }));
+                }
+              };
+
+              return (
+                <TriageCard
+                  key={pid}
+                  testId={`triage-card-${pid}`}
+                  tone="warn"
+                  headerLeft={
+                    <>
+                      <span className={styles.packetId}>{pid}</span>
+                      {(item.packet.title || item.packet.goal) && (item.packet.title || item.packet.goal) !== pid && (
+                        <strong style={{ fontSize: 13 }}>
+                          {item.packet.title || item.packet.goal}
+                        </strong>
+                      )}
+                      <span className={`${styles.pill} ${item.l1Passed ? styles.pillSuccess : styles.pillDanger}`}>
+                        {item.l1Passed
+                          ? (isZh ? '测试已通过' : 'Tests Passed')
+                          : (isZh ? '测试未通过' : 'Tests Failed')}
+                      </span>
+                      {item.resolvedFindings.length > 0 && (
+                        <span className={`${styles.pill} ${styles.pillSuccess}`}>
+                          {isZh ? `已闭合 ${item.resolvedFindings.length} 项` : `${item.resolvedFindings.length} resolved`}
+                        </span>
+                      )}
+                    </>
+                  }
+                  headerRight={
+                    latestReview ? (
+                      <button
+                        type="button"
+                        className={styles.linkBtn}
+                        onClick={() =>
+                          store.drillIntoNode(pid, {
+                            traceId: latestReview.id,
+                            sessionKey: latestReview.key,
+                            packetId: pid,
+                          })
+                        }
+                      >
+                        {isZh ? '查看最近审查记录 →' : 'Inspect latest review →'}
+                      </button>
+                    ) : null
+                  }
+                  body={
+                    <>
+                      <div style={{ fontSize: 12.5, color: 'var(--fw-text)', lineHeight: 1.55 }}>
+                        {item.reason}
+                      </div>
+
+                      {!item.l1Passed && (item.failedL1Details.length > 0 || item.failedCommands.length > 0) && (
+                        <div
+                          data-testid={`triage-l1-failures-${pid}`}
+                          style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12 }}
+                        >
+                          <strong style={{ fontSize: 12, color: 'var(--fw-danger)' }}>
+                            {isZh ? 'L1 验收失败明细' : 'L1 Gate Failures'}
+                          </strong>
+                          {item.failedL1Details.length > 0
+                            ? item.failedL1Details.map((f, idx) => (
+                                <div key={idx} className={styles.findingItem}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                                    <code style={{ fontSize: 11.5 }}>{f.cmd || 'L1 check'}</code>
+                                    {f.exitCode !== null && (
+                                      <span className={`${styles.pill} ${styles.pillDanger}`}>exit {f.exitCode}</span>
+                                    )}
+                                  </div>
+                                  {f.output && (
+                                    <pre style={{ margin: '4px 0 0', fontSize: 11, whiteSpace: 'pre-wrap', wordBreak: 'break-word', color: 'var(--fw-text-muted)' }}>
+                                      {f.output}
+                                    </pre>
+                                  )}
+                                </div>
+                              ))
+                            : (
+                                <div className={styles.findingItem}>
+                                  <code>{item.failedCommands.join(' · ')}</code>
+                                </div>
+                              )}
+                        </div>
+                      )}
+
+                      {item.openFindings.length > 0 ? (
+                        <div
+                          data-testid={`triage-findings-${pid}`}
+                          style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12 }}
+                        >
+                          <strong style={{ fontSize: 12, color: 'var(--fw-danger)' }}>
+                            {isZh
+                              ? `未闭合审查缺陷 (${item.openFindings.length} 项)`
+                              : `Open review findings (${item.openFindings.length})`}
+                          </strong>
+                          {item.openFindings.map((f, idx) => (
+                            <div key={String(f.id ?? idx)} className={styles.findingItem}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                                <span className={`${styles.pill} ${f.severity === 'blocker' ? styles.pillDanger : styles.pillWarn}`}>
+                                  {String(f.severity || 'major')}
+                                </span>
+                                {Boolean(f.id) && <code>{String(f.id)}</code>}
+                                {Boolean(f.target) && <code style={{ fontSize: 11 }}>{String(f.target)}</code>}
+                              </div>
+                              {Boolean(f.evidence) && (
+                                <div style={{ color: 'var(--fw-text)', marginTop: 2 }}>{String(f.evidence)}</div>
+                              )}
+                              {Boolean(f.fix) && (
+                                <div style={{ color: 'var(--fw-text-muted)', fontSize: 11.5, marginTop: 2 }}>
+                                  {isZh ? '要求修复：' : 'Fix: '}
+                                  {String(f.fix)}
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      ) : item.reasons.length > 0 ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12 }}>
+                          <strong style={{ fontSize: 12, color: 'var(--fw-danger)' }}>
+                            {isZh ? '最近审查意见' : 'Latest review reasons'}
+                          </strong>
+                          <ul style={{ margin: 0, paddingLeft: 18, lineHeight: 1.5 }}>
+                            {item.reasons.map((r, idx) => (
+                              <li key={idx}>{r}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      ) : null}
+
+                      {item.advisory.length > 0 && (
+                        <details className={styles.recoveryDetails}>
+                          <summary>
+                            {isZh ? `非阻塞建议 (${item.advisory.length} 项)` : `Non-blocking advisory (${item.advisory.length})`}
+                          </summary>
+                          <ul style={{ margin: '6px 0 0', paddingLeft: 18, fontSize: 12, lineHeight: 1.5 }}>
+                            {item.advisory.map((a, idx) => (
+                              <li key={idx}>{a}</li>
+                            ))}
+                          </ul>
+                        </details>
+                      )}
+                    </>
+                  }
+                  noteInput={
+                    <input
+                      type="text"
+                      className={styles.input}
+                      style={{ width: '100%' }}
+                      data-testid={`triage-guidance-${pid}`}
+                      value={guidanceVal}
+                      onChange={e => setTriageGuidance(prev => ({ ...prev, [pid]: e.target.value }))}
+                      placeholder={
+                        isZh
+                          ? '可选：附一句给 AI 的说明或放行理由（不填可直接点下方按钮）'
+                          : 'Optional: add a note for AI or sign-off reason (leave blank to click below)'
+                      }
+                    />
+                  }
+                  actions={
+                    <>
+                      <button
+                        type="button"
+                        className={`${styles.btn} ${styles.btnPrimary} ${styles.btnSm}`}
+                        data-testid={`triage-retry-${pid}`}
+                        title={isZh ? '重新修改代码并再次审查' : 'Re-run implementation and review'}
+                        disabled={snap.busyAction !== null}
+                        onClick={() => void runTriage('retry')}
+                      >
+                        {isZh ? '重新执行' : 'Retry'}
+                      </button>
+                      <button
+                        type="button"
+                        className={`${styles.btn} ${styles.btnSm}`}
+                        data-testid={`triage-replan-${pid}`}
+                        title={isZh ? '交由规划师调整本步需求或验收标准' : 'Ask planner to revise this packet spec'}
+                        disabled={snap.busyAction !== null}
+                        onClick={() => void runTriage('replan')}
+                      >
+                        {isZh ? '修改要求' : 'Revise Spec'}
+                      </button>
+                      {item.l1Passed && (
+                        <button
+                          type="button"
+                          className={`${styles.btn} ${styles.btnSm}`}
+                          data-testid={`triage-accept-${pid}`}
+                          title={isZh ? '测试已通过，跳过审查直接合并' : 'Tests passed — skip AI review and merge'}
+                          disabled={snap.busyAction !== null}
+                          onClick={() => void runTriage('accept')}
+                        >
+                          {isZh ? '直接通过' : 'Accept'}
+                        </button>
+                      )}
+                    </>
+                  }
+                  error={
+                    errText ? (
+                      <div
+                        data-testid={`triage-error-${pid}`}
+                        style={{ fontSize: 12, color: 'var(--fw-danger)', lineHeight: 1.5 }}
+                      >
+                        {errText}
+                      </div>
+                    ) : null
+                  }
+                />
+              );
+            };
+
+            const renderMilestoneTriageCard = (msItem: (typeof escalatedMilestones)[number]) => {
+              const guidanceVal = milestoneGuidance[msItem.id] ?? msItem.existingGuidance;
+              const errText = milestoneErrors[msItem.id] ?? '';
+              const latestJudgeTrace = [...snap.traces]
+                .reverse()
+                .find(tr => tr.role === 'judge' && tr.scope === msItem.id) ?? null;
+
+              const runMilestoneTriage = async (action: 'retry' | 'accept') => {
+                const defaultReasons: Record<'retry' | 'accept', string> = {
+                  retry: isZh
+                    ? '人工确认后重新执行里程碑 L2/L3 门禁与 Judge 终验'
+                    : 'Human requested milestone gate and Judge re-verification',
+                  accept: isZh
+                    ? '里程碑确定性 L2/L3 门禁已通过当前 HEAD，人工签核关闭里程碑'
+                    : 'Milestone deterministic L2/L3 gate passed on current HEAD; human signed off to accept',
+                };
+                const reasonText =
+                  action === 'accept'
+                    ? (guidanceVal.trim() || defaultReasons.accept)
+                    : defaultReasons.retry;
+                setMilestoneErrors(prev => {
+                  const next = { ...prev };
+                  delete next[msItem.id];
+                  return next;
+                });
+                const res = await store.triageMilestone(action, msItem.id, reasonText, guidanceVal);
+                const ctrl = res?.['milestone-control'] ?? res?.milestoneControl;
+                if (res?.ok && (ctrl ? ctrl.applied !== false : true)) {
+                  if (action === 'retry' || res?.state?.status !== 'completed') {
+                    await store.startRun();
+                  }
+                } else {
+                  const msg =
+                    ctrl?.message ||
+                    (typeof res?.error === 'string' ? res.error : '') ||
+                    (isZh ? '里程碑处置请求未生效，请刷新状态后重试。' : 'Milestone triage action was not applied.');
+                  setMilestoneErrors(prev => ({ ...prev, [msItem.id]: msg }));
+                }
+              };
+
+              return (
+                <TriageCard
+                  key={`milestone-${msItem.id}`}
+                  testId={`milestone-triage-card-${msItem.id}`}
+                  tone="warn"
+                  headerLeft={
+                    <>
+                      <span className={styles.packetId}>{msItem.id}</span>
+                      <strong style={{ fontSize: 13 }}>
+                        {isZh ? '里程碑终验待处置' : 'Milestone Verification Triage'}
+                      </strong>
+                      <span className={`${styles.pill} ${msItem.gatePassed ? styles.pillSuccess : styles.pillDanger}`}>
+                        {msItem.gatePassed
+                          ? (isZh ? '门禁已通过' : 'Gate Passed')
+                          : (isZh ? '门禁未通过' : 'Gate Failed')}
+                      </span>
+                      {msItem.judgeVerdict && (
+                        <span className={`${styles.pill} ${styles.pillWarn}`}>
+                          {`Judge: ${msItem.judgeVerdict}${msItem.judgeScore !== null ? ` · ${msItem.judgeScore.toFixed(2)}` : ''}`}
+                        </span>
+                      )}
+                    </>
+                  }
+                  headerRight={
+                    latestJudgeTrace ? (
+                      <button
+                        type="button"
+                        className={styles.linkBtn}
+                        onClick={() =>
+                          store.drillIntoNode(msItem.id, {
+                            traceId: latestJudgeTrace.id,
+                            sessionKey: latestJudgeTrace.key,
+                          })
+                        }
+                      >
+                        {isZh ? '查看裁决记录 →' : 'Inspect Judge trace →'}
+                      </button>
+                    ) : null
+                  }
+                  body={
+                    <>
+                      {msItem.inboxReason && msItem.judgeReasons.length === 0 && (
+                        <div style={{ fontSize: 12.5, color: 'var(--fw-text)', lineHeight: 1.55 }}>
+                          {msItem.inboxReason}
+                        </div>
+                      )}
+
+                      {msItem.identityError && (
+                        <div style={{ fontSize: 12, color: 'var(--fw-danger)', lineHeight: 1.5 }}>
+                          {msItem.identityError}
+                        </div>
+                      )}
+
+                      {msItem.failedCommands.length > 0 && (
+                        <div data-testid={`milestone-failed-cmds-${msItem.id}`} style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                          {msItem.failedCommands.map((fc, idx) => (
+                            <div key={`${fc.level}-${idx}`} className={styles.findingItem}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                                <span className={`${styles.pill} ${styles.pillDanger}`}>{fc.level}</span>
+                                <code style={{ fontSize: 11 }}>{fc.cmd}</code>
+                                {fc.exitCode !== null && (
+                                  <span style={{ fontSize: 11, color: 'var(--fw-danger)' }}>exit {fc.exitCode}</span>
+                                )}
+                              </div>
+                              {fc.outputTail && (
+                                <pre
+                                  style={{
+                                    margin: '4px 0 0',
+                                    fontSize: 11,
+                                    fontFamily: 'var(--fw-mono)',
+                                    whiteSpace: 'pre-wrap',
+                                    wordBreak: 'break-word',
+                                    color: 'var(--fw-text-muted)',
+                                  }}
+                                >
+                                  {fc.outputTail}
+                                </pre>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {msItem.judgeError && msItem.judgeReasons.length === 0 && (
+                        <div style={{ fontSize: 12, color: 'var(--fw-danger)', lineHeight: 1.5 }}>
+                          {isZh ? `Judge 错误：${msItem.judgeError}` : `Judge error: ${msItem.judgeError}`}
+                        </div>
+                      )}
+
+                      {msItem.judgeReasons.length > 0 && (
+                        <div data-testid={`milestone-judge-reasons-${msItem.id}`} style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12 }}>
+                          <strong style={{ fontSize: 12, color: 'var(--fw-danger)' }}>
+                            {isZh ? 'Judge 裁决理由' : 'Judge reasons'}
+                          </strong>
+                          {msItem.judgeReasons.map((reason, idx) => (
+                            <div key={idx} className={styles.findingItem}>
+                              {reason}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </>
+                  }
+                  noteInput={
+                    <input
+                      type="text"
+                      className={styles.input}
+                      style={{ width: '100%' }}
+                      data-testid={`milestone-triage-guidance-${msItem.id}`}
+                      value={guidanceVal}
+                      onChange={e => setMilestoneGuidance(prev => ({ ...prev, [msItem.id]: e.target.value }))}
+                      placeholder={
+                        isZh
+                          ? '可选：补充给 Judge 的范围指导，或直接通过里程碑的签核说明…'
+                          : 'Optional: scope guidance for Judge re-verification or milestone sign-off note…'
+                      }
+                    />
+                  }
+                  actions={
+                    <>
+                      <button
+                        type="button"
+                        className={`${styles.btn} ${styles.btnPrimary} ${styles.btnSm}`}
+                        data-testid={`milestone-triage-retry-${msItem.id}`}
+                        disabled={snap.busyAction !== null}
+                        onClick={() => void runMilestoneTriage('retry')}
+                      >
+                        {isZh ? '重新验证' : 'Retry Verification'}
+                      </button>
+                      {msItem.gatePassed && (
+                        <button
+                          type="button"
+                          className={`${styles.btn} ${styles.btnSm}`}
+                          data-testid={`milestone-triage-accept-${msItem.id}`}
+                          disabled={snap.busyAction !== null}
+                          onClick={() => void runMilestoneTriage('accept')}
+                        >
+                          {isZh ? '直接通过里程碑' : 'Accept Milestone'}
+                        </button>
+                      )}
+                    </>
+                  }
+                  error={
+                    errText ? (
+                      <div data-testid={`milestone-triage-error-${msItem.id}`} style={{ fontSize: 12, color: 'var(--fw-danger)' }}>
+                        {errText}
+                      </div>
+                    ) : null
+                  }
+                />
+              );
+            };
+
             const renderWaveSection = (wave: { index: number; items: PacketNode[] }, keyPrefix: string, showDagButton: boolean) => {
               const doneCount = wave.items.filter(p =>
                 ['done', 'completed', 'passed'].includes((p.status ?? '').toLowerCase()),
@@ -2390,28 +2782,24 @@ export function ChatStreamView({
                     {wave.items.map(packet => {
                       const tr = traceByPacket.get(packet.id) ?? null;
                       const pktTraces = packetTracesMap.get(packet.id) ?? [];
+                      const pktRevisions = revisionsByPacket.get(packet.id) ?? [];
                       const hasRunningPacketTrace = isPacketEffectivelyRunning(packet, pktTraces, snap.running);
-                      const tone = packetTone(packet.status, hasRunningPacketTrace);
-                      const locPktStatus = formatLocalizedStepStatus(packet.status, hasRunningPacketTrace, isZh);
+                      const hasRunningLocalRevision = pktRevisions.some(rev => rev.running);
+                      const tone = packetTone(packet.status, hasRunningPacketTrace, hasRunningLocalRevision);
+                      const locPktStatus = formatLocalizedStepStatus(packet.status, hasRunningPacketTrace, isZh, hasRunningLocalRevision);
                       const needsAttention = ['failed', 'blocked', 'escalated', 'inbox'].includes((packet.status ?? '').toLowerCase());
                       const pktThinking = typeof (packet as Record<string, unknown>).thinking === 'string'
                         ? String((packet as Record<string, unknown>).thinking)
                         : '';
                       const pktModelLabel = formatModelBadge(packet.model || tr?.model, pktThinking || tr?.thinking, isZh) || packet.route;
-                      const inboxList = Array.isArray((snap.state as { inbox?: unknown } | null)?.inbox)
-                        ? ((snap.state as { inbox?: Array<{ 'packet-id'?: string; reason?: string; at?: string }> }).inbox ?? [])
-                        : [];
-                      const inboxEntry = (packet.status ?? '').toLowerCase() === 'inbox'
-                        ? [...inboxList].reverse().find(item => item?.['packet-id'] === packet.id) ?? null
-                        : null;
-                      const pktRevisions = revisionsByPacket.get(packet.id) ?? [];
+                      const inboxTriage = !snap.running ? inboxTriageByPacketId.get(packet.id) ?? null : null;
                       const latestReviewTrace = [...pktTraces]
                         .reverse()
                         .find(item => item.role === 'review' || item.role === 'frontend-ux-review') ?? null;
                       const isCompleted = ['done', 'completed', 'passed'].includes((packet.status ?? '').toLowerCase());
                       const roleCounts: Record<string, number> = {};
                       return (
-                        <div key={packet.id} style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+                        <div key={packet.id} data-testid={`packet-wrapper-${packet.id}`} style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
                           <div
                             className={`${styles.packetCardShell} ${tone.shellExtra}`.trim()}
                             data-testid={`packet-shell-${packet.id}`}
@@ -2543,22 +2931,18 @@ export function ChatStreamView({
                               </div>
                             )}
                           </div>
-                          {inboxEntry && (
-                            <div className={`${styles.decisionCard} ${styles.decisionCardWarn}`} data-testid={`inbox-escalation-${packet.id}`} style={{ marginTop: 6 }}>
-                              <div className={styles.decisionCardHeader}>
-                                <strong style={{ fontSize: 12.5, color: 'var(--fw-warn)' }}>
-                                  {isZh ? `已暂停并转交人工收件箱 · ${packet.id}` : `Escalated to Human Inbox · ${packet.id}`}
-                                </strong>
-                                <span className={`${styles.pill} ${styles.pillWarn}`}>{isZh ? '已达自动返修上限' : 'Auto-retry limit reached'}</span>
-                              </div>
-                              <div style={{ fontSize: 12, color: 'var(--fw-text)', lineHeight: 1.55 }}>
-                                {inboxEntry.reason}
-                              </div>
-                              <div style={{ fontSize: 11.5, color: 'var(--fw-text-muted)', lineHeight: 1.5 }}>
-                                {isZh
-                                  ? '系统按安全护栏自动停止（未强行放过未闭合的验证项）。请查看下方处置卡操作或点击上方节点检查完整现场。'
-                                  : 'Paused safely by escalation guardrail. Use the triage card below or open the packet above to inspect the full review.'}
-                              </div>
+                          {pktRevisions.length > 0 && (
+                            <div
+                              className={styles.roundTimeline}
+                              data-testid={`packet-revisions-${packet.id}`}
+                              style={{ marginTop: 6, marginLeft: 12 }}
+                            >
+                              {pktRevisions.map(renderPlanScopeCard)}
+                            </div>
+                          )}
+                          {inboxTriage && (
+                            <div style={{ marginTop: 6 }} data-testid={`packet-triage-slot-${packet.id}`}>
+                              {renderPacketTriageCard(inboxTriage)}
                             </div>
                           )}
                         </div>
@@ -2575,29 +2959,21 @@ export function ChatStreamView({
                   {milestoneTimeline.milestones.map((ms, msIdx) => {
                     const msWaves = groupIntoWaves(ms.packets, snap.state?.waves);
                     const msDur = formatDurationShort(ms.totalDurationMs);
-                    const msTone: SemanticTone = ms.isRunning
-                      ? 'running'
-                      : ms.isClosed
-                        ? 'ok'
-                        : ms.isAttention
-                          ? 'warn'
-                          : 'neutral';
-                    const msStatusLabel = ms.isRunning
-                      ? (isZh ? '进行中' : 'Running')
-                      : ms.isClosed
-                        ? (isZh ? '已关闭' : 'Closed')
-                        : ms.status === 'budget-stopped'
-                          ? (isZh ? '已达轮次上限' : 'Round Limit')
-                          : ms.isAttention
-                            ? (isZh ? '待人工处置' : 'Needs Triage')
-                            : ms.isPending
-                              ? (isZh ? '待开始' : 'Pending')
-                              : (isZh ? '进行中' : 'In Progress');
+                    const msTone: SemanticTone = ms.tone;
+                    const msStatusLabel = ms.statusLabel;
+                    const msPacketIds = new Set(ms.packets.map(p => p.id));
+                    const standaloneLocalRevisions = ms.localRevisions.filter(
+                      rev => !rev.triggerPacketId || !msPacketIds.has(rev.triggerPacketId),
+                    );
+                    const escalatedMsItem = !snap.running ? escalatedMilestoneById.get(ms.id) ?? null : null;
+                    const showPlanningSection = ms.planningGroups.length > 0 || (!snap.running && ms.hasBlockedPlanning);
+                    const showVerificationSection = ms.verificationTraces.length > 0 || Boolean(escalatedMsItem);
                     const msClass = [
                       styles.milestoneBlock,
                       ms.isRunning ? styles.runningFlowCard : '',
                       ms.isClosed ? styles.milestoneBlockClosed : '',
-                      ms.isAttention && !ms.isRunning ? styles.milestoneBlockAttention : '',
+                      ms.tone === 'danger' && !ms.isRunning ? styles.milestoneBlockDanger : '',
+                      ms.isAttention && ms.tone !== 'danger' && !ms.isRunning ? styles.milestoneBlockAttention : '',
                       ms.isPending ? styles.milestoneBlockPending : '',
                     ]
                       .filter(Boolean)
@@ -2623,14 +2999,82 @@ export function ChatStreamView({
                           </summary>
                           {!ms.isPending && (
                             <div className={styles.milestoneBlockBody}>
-                              {ms.planningGroups.length > 0 && (
+                              {showPlanningSection && (
                                 <div className={styles.milestoneSubSection}>
                                   <div className={styles.milestoneSubTitle}>
                                     {isZh ? '① 里程碑拆包规划与审查' : '1. Milestone Planning & Review'}
                                   </div>
-                                  <div className={styles.roundTimeline}>
-                                    {ms.planningGroups.map(renderPlanScopeCard)}
-                                  </div>
+                                  {ms.planningGroups.length > 0 && (
+                                    <div className={styles.roundTimeline}>
+                                      {ms.planningGroups.map(renderPlanScopeCard)}
+                                    </div>
+                                  )}
+                                  {!snap.running && ms.hasBlockedPlanning && (
+                                    <TriageCard
+                                      testId={`milestone-plan-triage-${ms.id}`}
+                                      tone="danger"
+                                      headerLeft={
+                                        <>
+                                          <span className={styles.packetId}>{ms.id}</span>
+                                          <strong style={{ fontSize: 13 }}>
+                                            {ms.status === 'budget-stopped'
+                                              ? (isZh ? '里程碑拆包规划已达轮次上限' : 'Milestone Planning Round Limit')
+                                              : (isZh ? '里程碑拆包规划已阻塞' : 'Milestone Planning Blocked')}
+                                          </strong>
+                                          <span className={`${styles.pill} ${styles.pillDanger}`}>{ms.statusLabel}</span>
+                                        </>
+                                      }
+                                      body={
+                                        <div style={{ fontSize: 12.5, color: 'var(--fw-text)', lineHeight: 1.55 }}>
+                                          {ms.planningBlockedDetail ||
+                                            (isZh
+                                              ? `${ms.id} 的拆包规划请求未完成并已暂停。点击下方按钮重试该里程碑拆包规划并继续执行。`
+                                              : `${ms.id} planning request was blocked and paused. Retry milestone planning below to continue.`)}
+                                        </div>
+                                      }
+                                      actions={
+                                        <>
+                                          <button
+                                            type="button"
+                                            className={`${styles.btn} ${styles.btnPrimary} ${styles.btnSm}`}
+                                            data-testid={`milestone-plan-retry-${ms.id}`}
+                                            disabled={snap.busyAction !== null}
+                                            onClick={() =>
+                                              void store.retryPlanning({
+                                                scope: 'milestone',
+                                                scopeId: ms.id,
+                                                continueExecution: Boolean(planning?.['start-authorized']),
+                                              })
+                                            }
+                                          >
+                                            {formatRetryPlanningLabel(
+                                              {
+                                                scope: 'milestone',
+                                                scopeId: ms.id,
+                                                continueExecution: Boolean(planning?.['start-authorized']),
+                                                failedRequestId: '',
+                                                cancellableRequestId: '',
+                                              },
+                                              isZh,
+                                            )}
+                                          </button>
+                                          {retryTarget.scope === 'milestone' &&
+                                            retryTarget.scopeId === ms.id &&
+                                            retryTarget.cancellableRequestId && (
+                                              <button
+                                                type="button"
+                                                className={`${styles.btn} ${styles.btnSm}`}
+                                                data-testid={`milestone-plan-cancel-${ms.id}`}
+                                                disabled={snap.busyAction !== null}
+                                                onClick={() => void store.cancelPlanningRequest(retryTarget.cancellableRequestId)}
+                                              >
+                                                {isZh ? '取消中断规划请求' : 'Cancel Interrupted Request'}
+                                              </button>
+                                            )}
+                                        </>
+                                      }
+                                    />
+                                  )}
                                 </div>
                               )}
                               {msWaves.length > 0 && (
@@ -2641,70 +3085,77 @@ export function ChatStreamView({
                                   {msWaves.map(w => renderWaveSection(w, ms.id, msIdx === 0 && w.index === 1))}
                                 </div>
                               )}
-                              {ms.localRevisions.length > 0 && (
+                              {standaloneLocalRevisions.length > 0 && (
                                 <div className={styles.milestoneSubSection} data-testid="mid-exec-plan-revisions" data-milestone-revisions={ms.id}>
                                   <div className={styles.milestoneSubTitle}>
                                     {isZh ? '执行期局部修订与补强' : 'Local Plan Revisions'}
                                   </div>
                                   <div className={styles.roundTimeline}>
-                                    {ms.localRevisions.map(renderPlanScopeCard)}
+                                    {standaloneLocalRevisions.map(renderPlanScopeCard)}
                                   </div>
                                 </div>
                               )}
-                              {ms.verificationTraces.length > 0 && (
+                              {showVerificationSection && (
                                 <div className={styles.milestoneSubSection}>
                                   <div className={styles.milestoneSubTitle}>
                                     {isZh ? '③ 里程碑终验与裁决' : '3. Milestone Verification & Judge'}
                                   </div>
-                                  <div className={styles.roundStepsList}>
-                                    {ms.verificationTraces.map(tr => {
-                                      const loc = formatLocalizedStepStatus(tr.status, tr.running, isZh);
-                                      const timeStr = formatClock(tr.startedAt || tr.updatedAt);
-                                      const stepDur = formatDurationShort(tr.durationMs);
-                                      return (
-                                        <button
-                                          key={tr.id}
-                                          type="button"
-                                          className={`${styles.roundStepRow} ${tr.running ? styles.runningFlowCard : ''}`}
-                                          data-testid={`agent-card-${tr.id}`}
-                                          onClick={() =>
-                                            store.drillIntoNode(tr.scope || ms.id, {
-                                              traceId: tr.id,
-                                              sessionKey: tr.key,
-                                            })
-                                          }
-                                        >
-                                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-                                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontWeight: 600, fontSize: 12.5 }}>
-                                              <span className={`${styles.statusDot} ${semanticDotClass(loc.tone)}`} />
-                                              <span>{roleLabel(tr.role, isZh, tr.scope, tr.sessionTitle)}</span>
-                                              {tr.model && (
-                                                <span className={styles.pill} title={tr.model}>
-                                                  {formatModelBadge(tr.model, tr.thinking, isZh)}
-                                                </span>
-                                              )}
-                                            </span>
-                                            <span className={`${styles.pill} ${semanticPillClass(loc.tone)}`}>
-                                              {tr.running ? t('traces.liveBadge') : loc.label}
-                                            </span>
-                                          </div>
-                                          <div style={{ fontSize: 12, color: 'var(--fw-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                            {tr.preview || tr.errorSummary || (tr.running ? t('design.liveWaiting') : '—')}
-                                          </div>
-                                          <div className={styles.roundStepMeta}>
-                                            <span>
-                                              {timeStr ? `${timeStr}` : ''}
-                                              {timeStr && stepDur ? ' · ' : ''}
-                                              {stepDur ? (isZh ? `耗时 ${stepDur}` : stepDur) : ''}
-                                            </span>
-                                            <span style={{ color: 'var(--fw-accent)', fontWeight: 500 }}>
-                                              {t('chat.enterSession')} →
-                                            </span>
-                                          </div>
-                                        </button>
-                                      );
-                                    })}
-                                  </div>
+                                  {ms.verificationTraces.length > 0 && (
+                                    <div className={styles.roundStepsList}>
+                                      {ms.verificationTraces.map(tr => {
+                                        const loc = formatLocalizedStepStatus(tr.status, tr.running, isZh);
+                                        const timeStr = formatClock(tr.startedAt || tr.updatedAt);
+                                        const stepDur = formatDurationShort(tr.durationMs);
+                                        return (
+                                          <button
+                                            key={tr.id}
+                                            type="button"
+                                            className={`${styles.roundStepRow} ${tr.running ? styles.runningFlowCard : ''}`}
+                                            data-testid={`agent-card-${tr.id}`}
+                                            onClick={() =>
+                                              store.drillIntoNode(tr.scope || ms.id, {
+                                                traceId: tr.id,
+                                                sessionKey: tr.key,
+                                              })
+                                            }
+                                          >
+                                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontWeight: 600, fontSize: 12.5 }}>
+                                                <span className={`${styles.statusDot} ${semanticDotClass(loc.tone)}`} />
+                                                <span>{roleLabel(tr.role, isZh, tr.scope, tr.sessionTitle)}</span>
+                                                {tr.model && (
+                                                  <span className={styles.pill} title={tr.model}>
+                                                    {formatModelBadge(tr.model, tr.thinking, isZh)}
+                                                  </span>
+                                                )}
+                                              </span>
+                                              <span className={`${styles.pill} ${semanticPillClass(loc.tone)}`}>
+                                                {tr.running ? t('traces.liveBadge') : loc.label}
+                                              </span>
+                                            </div>
+                                            <div style={{ fontSize: 12, color: 'var(--fw-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                              {tr.preview || tr.errorSummary || (tr.running ? t('design.liveWaiting') : '—')}
+                                            </div>
+                                            <div className={styles.roundStepMeta}>
+                                              <span>
+                                                {timeStr ? `${timeStr}` : ''}
+                                                {timeStr && stepDur ? ' · ' : ''}
+                                                {stepDur ? (isZh ? `耗时 ${stepDur}` : stepDur) : ''}
+                                              </span>
+                                              <span style={{ color: 'var(--fw-accent)', fontWeight: 500 }}>
+                                                {t('chat.enterSession')} →
+                                              </span>
+                                            </div>
+                                          </button>
+                                        );
+                                      })}
+                                    </div>
+                                  )}
+                                  {escalatedMsItem && (
+                                    <div style={{ marginTop: ms.verificationTraces.length > 0 ? 8 : 0 }}>
+                                      {renderMilestoneTriageCard(escalatedMsItem)}
+                                    </div>
+                                  )}
                                 </div>
                               )}
                             </div>
@@ -2741,10 +3192,14 @@ export function ChatStreamView({
               );
             }
 
+            const renderedFlatPacketIds = new Set(packets.map(p => p.id));
+            const standaloneFlatRevisions = midExecPlanRevisions.filter(
+              rev => !rev.triggerPacketId || !renderedFlatPacketIds.has(rev.triggerPacketId),
+            );
             return (
               <>
                 {waves.map(w => renderWaveSection(w, 'flat', w.index === 1))}
-                {midExecPlanRevisions.length > 0 && (
+                {standaloneFlatRevisions.length > 0 && (
                   <section className={styles.orchBlock} data-testid="mid-exec-plan-revisions">
                     <div className={styles.orchBlockHead}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
@@ -2753,13 +3208,13 @@ export function ChatStreamView({
                           {isZh ? '执行期计划修订与验收补强' : 'Mid-Execution Plan Revisions'}
                         </strong>
                         <span className={styles.pill}>
-                          {isZh ? `共 ${midExecPlanRevisions.length} 次修订` : `${midExecPlanRevisions.length} revisions`}
+                          {isZh ? `共 ${standaloneFlatRevisions.length} 次修订` : `${standaloneFlatRevisions.length} revisions`}
                         </span>
                       </div>
                     </div>
                     <div className={styles.orchIndent}>
                       <div className={styles.roundTimeline}>
-                        {midExecPlanRevisions.map(renderPlanScopeCard)}
+                        {standaloneFlatRevisions.map(renderPlanScopeCard)}
                       </div>
                     </div>
                   </section>
@@ -2788,13 +3243,27 @@ export function ChatStreamView({
             </section>
           )}
 
-          {/* Persistent Bottom-of-Stream Escalation & Human Triage Command Center */}
-          {!snap.running &&
-            (snap.state?.status === 'escalated' ||
-              snap.state?.status === 'budget-stopped' ||
-              inboxTriagePackets.length > 0 ||
+          {/* Global / Unattached Fallback Escalation Summary (node-owned triage cards are co-located under their owning packet/milestone) */}
+          {(() => {
+            if (snap.running) return null;
+            const renderedPacketIds = new Set(packets.map(p => p.id));
+            const renderedMilestoneIds = new Set(milestoneTimeline.milestones.map(m => m.id));
+            const remainingInboxPackets = inboxTriagePackets.filter(item => !renderedPacketIds.has(item.packet.id));
+            const remainingEscalatedMilestones = escalatedMilestones.filter(ms => !renderedMilestoneIds.has(ms.id));
+            const anyInlineTriageRendered =
+              inboxTriagePackets.some(item => renderedPacketIds.has(item.packet.id)) ||
+              escalatedMilestones.some(ms => renderedMilestoneIds.has(ms.id)) ||
+              milestoneTimeline.milestones.some(ms => ms.hasBlockedPlanning);
+            const ctrl = (snap.state as { control?: { status?: string; message?: string } } | null)?.control;
+            const hasControlFailure = ctrl?.status === 'failed' && typeof ctrl.message === 'string' && ctrl.message.trim() !== '';
+            const showGlobalEscalation =
+              remainingInboxPackets.length > 0 ||
+              remainingEscalatedMilestones.length > 0 ||
               executionBlockedSessions.length > 0 ||
-              escalatedMilestones.length > 0) && (
+              hasControlFailure ||
+              ((snap.state?.status === 'escalated' || snap.state?.status === 'budget-stopped') && !anyInlineTriageRendered);
+            if (!showGlobalEscalation) return null;
+            return (
               <section className={styles.orchBlock} data-testid="main-escalation-summary">
                 <div className={styles.orchBlockHead}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
@@ -2803,12 +3272,12 @@ export function ChatStreamView({
                       {isZh ? '任务已暂停 · 需要人工处置' : 'Task Paused · Human Triage Required'}
                     </strong>
                     <span className={`${styles.pill} ${styles.pillWarn}`}>
-                      {inboxTriagePackets.length > 0
-                        ? (isZh ? `${inboxTriagePackets.length} 个单元待裁决` : `${inboxTriagePackets.length} inbox packet(s)`)
-                        : executionBlockedSessions.length > 0
-                          ? (isZh ? `${executionBlockedSessions.length} 个阻塞会话` : `${executionBlockedSessions.length} blocked session(s)`)
-                          : escalatedMilestones.length > 0
-                            ? (isZh ? `${escalatedMilestones.length} 个里程碑待处置` : `${escalatedMilestones.length} milestone(s)`)
+                      {executionBlockedSessions.length > 0
+                        ? (isZh ? `${executionBlockedSessions.length} 个阻塞会话` : `${executionBlockedSessions.length} blocked session(s)`)
+                        : remainingInboxPackets.length > 0
+                          ? (isZh ? `${remainingInboxPackets.length} 个单元待裁决` : `${remainingInboxPackets.length} inbox packet(s)`)
+                          : remainingEscalatedMilestones.length > 0
+                            ? (isZh ? `${remainingEscalatedMilestones.length} 个里程碑待处置` : `${remainingEscalatedMilestones.length} milestone(s)`)
                             : snap.state?.status === 'budget-stopped'
                               ? (isZh ? '预算护栏暂停' : 'Budget guardrail')
                               : (isZh ? '已升级至人工' : 'Escalated')}
@@ -2817,257 +3286,6 @@ export function ChatStreamView({
                 </div>
 
                 <div className={styles.orchIndent} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                  {inboxTriagePackets.map(item => {
-                    const pid = item.packet.id;
-                    const guidanceVal = triageGuidance[pid] ?? item.existingGuidance;
-                    const errText = triageErrors[pid] ?? '';
-                    const pktTraces = packetTracesMap.get(pid) ?? [];
-                    const latestReview = [...pktTraces].reverse().find(tr => tr.role === 'review') ?? pktTraces[pktTraces.length - 1] ?? null;
-
-                    const runTriage = async (action: 'retry' | 'replan' | 'accept') => {
-                      const defaultReasons: Record<'retry' | 'replan' | 'accept', string> = {
-                        retry: isZh
-                          ? '人工审阅后重新武装该单元重试'
-                          : 'Human triaged inbox packet and re-armed for retry',
-                        replan: isZh
-                          ? '人工授权发起单包契约修订'
-                          : 'Human authorized single-packet contract revision',
-                        accept: isZh
-                          ? 'L1 确定性门禁已绿，人工签核放行并提交合并'
-                          : 'L1 deterministic gate green; human signed off to accept and merge',
-                      };
-                      const reasonText =
-                        action === 'accept'
-                          ? (guidanceVal.trim() || defaultReasons.accept)
-                          : defaultReasons[action];
-                      setTriageErrors(prev => {
-                        const next = { ...prev };
-                        delete next[pid];
-                        return next;
-                      });
-                      const res = await store.triagePacket(
-                        action,
-                        pid,
-                        reasonText,
-                        action === 'accept' ? undefined : guidanceVal,
-                      );
-                      const ctrl = res?.['packet-control'] ?? res?.packetControl;
-                      if (res?.ok && (ctrl ? ctrl.applied !== false : true)) {
-                        if (action === 'retry' || action === 'accept') {
-                          await store.startRun();
-                        }
-                      } else {
-                        const msg =
-                          ctrl?.message ||
-                          (typeof res?.error === 'string' ? res.error : '') ||
-                          (isZh ? '处置请求未生效，请刷新状态后重试。' : 'Triage action was not applied.');
-                        setTriageErrors(prev => ({ ...prev, [pid]: msg }));
-                      }
-                    };
-
-                    return (
-                      <TriageCard
-                        key={pid}
-                        testId={`triage-card-${pid}`}
-                        tone="warn"
-                        headerLeft={
-                          <>
-                            <span className={styles.packetId}>{pid}</span>
-                            {(item.packet.title || item.packet.goal) && (item.packet.title || item.packet.goal) !== pid && (
-                              <strong style={{ fontSize: 13 }}>
-                                {item.packet.title || item.packet.goal}
-                              </strong>
-                            )}
-                            <span className={`${styles.pill} ${item.l1Passed ? styles.pillSuccess : styles.pillDanger}`}>
-                              {item.l1Passed
-                                ? (isZh ? '测试已通过' : 'Tests Passed')
-                                : (isZh ? '测试未通过' : 'Tests Failed')}
-                            </span>
-                            {item.resolvedFindings.length > 0 && (
-                              <span className={`${styles.pill} ${styles.pillSuccess}`}>
-                                {isZh ? `已闭合 ${item.resolvedFindings.length} 项` : `${item.resolvedFindings.length} resolved`}
-                              </span>
-                            )}
-                          </>
-                        }
-                        headerRight={
-                          latestReview ? (
-                            <button
-                              type="button"
-                              className={styles.linkBtn}
-                              onClick={() =>
-                                store.drillIntoNode(pid, {
-                                  traceId: latestReview.id,
-                                  sessionKey: latestReview.key,
-                                  packetId: pid,
-                                })
-                              }
-                            >
-                              {isZh ? '查看最近审查记录 →' : 'Inspect latest review →'}
-                            </button>
-                          ) : null
-                        }
-                        body={
-                          <>
-                            <div style={{ fontSize: 12.5, color: 'var(--fw-text)', lineHeight: 1.55 }}>
-                              {item.reason}
-                            </div>
-
-                            {!item.l1Passed && (item.failedL1Details.length > 0 || item.failedCommands.length > 0) && (
-                              <div
-                                data-testid={`triage-l1-failures-${pid}`}
-                                style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12 }}
-                              >
-                                <strong style={{ fontSize: 12, color: 'var(--fw-danger)' }}>
-                                  {isZh ? 'L1 验收失败明细' : 'L1 Gate Failures'}
-                                </strong>
-                                {item.failedL1Details.length > 0
-                                  ? item.failedL1Details.map((f, idx) => (
-                                      <div key={idx} className={styles.findingItem}>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                                          <code style={{ fontSize: 11.5 }}>{f.cmd || 'L1 check'}</code>
-                                          {f.exitCode !== null && (
-                                            <span className={`${styles.pill} ${styles.pillDanger}`}>exit {f.exitCode}</span>
-                                          )}
-                                        </div>
-                                        {f.output && (
-                                          <pre style={{ margin: '4px 0 0', fontSize: 11, whiteSpace: 'pre-wrap', wordBreak: 'break-word', color: 'var(--fw-text-muted)' }}>
-                                            {f.output}
-                                          </pre>
-                                        )}
-                                      </div>
-                                    ))
-                                  : (
-                                      <div className={styles.findingItem}>
-                                        <code>{item.failedCommands.join(' · ')}</code>
-                                      </div>
-                                    )}
-                              </div>
-                            )}
-
-                            {item.openFindings.length > 0 ? (
-                              <div
-                                data-testid={`triage-findings-${pid}`}
-                                style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12 }}
-                              >
-                                <strong style={{ fontSize: 12, color: 'var(--fw-danger)' }}>
-                                  {isZh
-                                    ? `未闭合审查缺陷 (${item.openFindings.length} 项)`
-                                    : `Open review findings (${item.openFindings.length})`}
-                                </strong>
-                                {item.openFindings.map((f, idx) => (
-                                  <div key={String(f.id ?? idx)} className={styles.findingItem}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                                      <span className={`${styles.pill} ${f.severity === 'blocker' ? styles.pillDanger : styles.pillWarn}`}>
-                                        {String(f.severity || 'major')}
-                                      </span>
-                                      {Boolean(f.id) && <code>{String(f.id)}</code>}
-                                      {Boolean(f.target) && <code style={{ fontSize: 11 }}>{String(f.target)}</code>}
-                                    </div>
-                                    {Boolean(f.evidence) && (
-                                      <div style={{ color: 'var(--fw-text)', marginTop: 2 }}>{String(f.evidence)}</div>
-                                    )}
-                                    {Boolean(f.fix) && (
-                                      <div style={{ color: 'var(--fw-text-muted)', fontSize: 11.5, marginTop: 2 }}>
-                                        {isZh ? '要求修复：' : 'Fix: '}
-                                        {String(f.fix)}
-                                      </div>
-                                    )}
-                                  </div>
-                                ))}
-                              </div>
-                            ) : item.reasons.length > 0 ? (
-                              <div style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12 }}>
-                                <strong style={{ fontSize: 12, color: 'var(--fw-danger)' }}>
-                                  {isZh ? '最近审查意见' : 'Latest review reasons'}
-                                </strong>
-                                <ul style={{ margin: 0, paddingLeft: 18, lineHeight: 1.5 }}>
-                                  {item.reasons.map((r, idx) => (
-                                    <li key={idx}>{r}</li>
-                                  ))}
-                                </ul>
-                              </div>
-                            ) : null}
-
-                            {item.advisory.length > 0 && (
-                              <details className={styles.recoveryDetails}>
-                                <summary>
-                                  {isZh ? `非阻塞建议 (${item.advisory.length} 项)` : `Non-blocking advisory (${item.advisory.length})`}
-                                </summary>
-                                <ul style={{ margin: '6px 0 0', paddingLeft: 18, fontSize: 12, lineHeight: 1.5 }}>
-                                  {item.advisory.map((a, idx) => (
-                                    <li key={idx}>{a}</li>
-                                  ))}
-                                </ul>
-                              </details>
-                            )}
-                          </>
-                        }
-                        noteInput={
-                          <input
-                            type="text"
-                            className={styles.input}
-                            style={{ width: '100%' }}
-                            data-testid={`triage-guidance-${pid}`}
-                            value={guidanceVal}
-                            onChange={e => setTriageGuidance(prev => ({ ...prev, [pid]: e.target.value }))}
-                            placeholder={
-                              isZh
-                                ? '可选：附一句给 AI 的说明或放行理由（不填可直接点下方按钮）'
-                                : 'Optional: add a note for AI or sign-off reason (leave blank to click below)'
-                            }
-                          />
-                        }
-                        actions={
-                          <>
-                            <button
-                              type="button"
-                              className={`${styles.btn} ${styles.btnPrimary} ${styles.btnSm}`}
-                              data-testid={`triage-retry-${pid}`}
-                              title={isZh ? '重新修改代码并再次审查' : 'Re-run implementation and review'}
-                              disabled={snap.busyAction !== null}
-                              onClick={() => void runTriage('retry')}
-                            >
-                              {isZh ? '重新执行' : 'Retry'}
-                            </button>
-                            <button
-                              type="button"
-                              className={`${styles.btn} ${styles.btnSm}`}
-                              data-testid={`triage-replan-${pid}`}
-                              title={isZh ? '交由规划师调整本步需求或验收标准' : 'Ask planner to revise this packet spec'}
-                              disabled={snap.busyAction !== null}
-                              onClick={() => void runTriage('replan')}
-                            >
-                              {isZh ? '修改要求' : 'Revise Spec'}
-                            </button>
-                            {item.l1Passed && (
-                              <button
-                                type="button"
-                                className={`${styles.btn} ${styles.btnSm}`}
-                                data-testid={`triage-accept-${pid}`}
-                                title={isZh ? '测试已通过，跳过审查直接合并' : 'Tests passed — skip AI review and merge'}
-                                disabled={snap.busyAction !== null}
-                                onClick={() => void runTriage('accept')}
-                              >
-                                {isZh ? '直接通过' : 'Accept'}
-                              </button>
-                            )}
-                          </>
-                        }
-                        error={
-                          errText ? (
-                            <div
-                              data-testid={`triage-error-${pid}`}
-                              style={{ fontSize: 12, color: 'var(--fw-danger)', lineHeight: 1.5 }}
-                            >
-                              {errText}
-                            </div>
-                          ) : null
-                        }
-                      />
-                    );
-                  })}
-
                   {executionBlockedSessions.length > 0 && (
                     <div
                       className={styles.decisionCard}
@@ -3097,13 +3315,13 @@ export function ChatStreamView({
                                   return next;
                                 });
                                 const res = await store.abandonSession(item.key, item.invocation, reason);
-                                const ctrl = (res?.['session-control'] ?? res?.sessionControl) as { applied?: boolean; message?: string } | undefined;
-                                if (res?.ok && (ctrl ? ctrl.applied !== false : true)) {
+                                const ctrlRes = (res?.['session-control'] ?? res?.sessionControl) as { applied?: boolean; message?: string } | undefined;
+                                if (res?.ok && (ctrlRes ? ctrlRes.applied !== false : true)) {
                                   await store.startRun();
                                 } else {
                                   setAbandonErrors(prev => ({
                                     ...prev,
-                                    [item.key]: ctrl?.message || (typeof res?.error === 'string' ? res.error : '') || 'Failed to abandon blocked session.',
+                                    [item.key]: ctrlRes?.message || (typeof res?.error === 'string' ? res.error : '') || 'Failed to abandon blocked session.',
                                   }));
                                 }
                               }}
@@ -3145,228 +3363,33 @@ export function ChatStreamView({
                     </div>
                   )}
 
-                  {escalatedMilestones.map(ms => {
-                    const guidanceVal = milestoneGuidance[ms.id] ?? ms.existingGuidance;
-                    const errText = milestoneErrors[ms.id] ?? '';
-                    const latestJudgeTrace = [...snap.traces]
-                      .reverse()
-                      .find(tr => tr.role === 'judge' && tr.scope === ms.id) ?? null;
-
-                    const runMilestoneTriage = async (action: 'retry' | 'accept') => {
-                      const defaultReasons: Record<'retry' | 'accept', string> = {
-                        retry: isZh
-                          ? '人工确认后重新执行里程碑 L2/L3 门禁与 Judge 终验'
-                          : 'Human requested milestone gate and Judge re-verification',
-                        accept: isZh
-                          ? '里程碑确定性 L2/L3 门禁已通过当前 HEAD，人工签核关闭里程碑'
-                          : 'Milestone deterministic L2/L3 gate passed on current HEAD; human signed off to accept',
-                      };
-                      const reasonText =
-                        action === 'accept'
-                          ? (guidanceVal.trim() || defaultReasons.accept)
-                          : defaultReasons.retry;
-                      setMilestoneErrors(prev => {
-                        const next = { ...prev };
-                        delete next[ms.id];
-                        return next;
-                      });
-                      const res = await store.triageMilestone(action, ms.id, reasonText, guidanceVal);
-                      const ctrl = res?.['milestone-control'] ?? res?.milestoneControl;
-                      if (res?.ok && (ctrl ? ctrl.applied !== false : true)) {
-                        if (action === 'retry' || res?.state?.status !== 'completed') {
-                          await store.startRun();
-                        }
-                      } else {
-                        const msg =
-                          ctrl?.message ||
-                          (typeof res?.error === 'string' ? res.error : '') ||
-                          (isZh ? '里程碑处置请求未生效，请刷新状态后重试。' : 'Milestone triage action was not applied.');
-                        setMilestoneErrors(prev => ({ ...prev, [ms.id]: msg }));
-                      }
-                    };
-
-                    return (
-                      <TriageCard
-                        key={`milestone-${ms.id}`}
-                        testId={`milestone-triage-card-${ms.id}`}
-                        tone="warn"
-                        headerLeft={
-                          <>
-                            <span className={styles.packetId}>{ms.id}</span>
-                            <strong style={{ fontSize: 13 }}>
-                              {isZh ? '里程碑终验待处置' : 'Milestone Verification Triage'}
-                            </strong>
-                            <span className={`${styles.pill} ${ms.gatePassed ? styles.pillSuccess : styles.pillDanger}`}>
-                              {ms.gatePassed
-                                ? (isZh ? '门禁已通过' : 'Gate Passed')
-                                : (isZh ? '门禁未通过' : 'Gate Failed')}
-                            </span>
-                            {ms.judgeVerdict && (
-                              <span className={`${styles.pill} ${styles.pillWarn}`}>
-                                {`Judge: ${ms.judgeVerdict}${ms.judgeScore !== null ? ` · ${ms.judgeScore.toFixed(2)}` : ''}`}
-                              </span>
-                            )}
-                          </>
-                        }
-                        headerRight={
-                          latestJudgeTrace ? (
-                            <button
-                              type="button"
-                              className={styles.linkBtn}
-                              onClick={() =>
-                                store.drillIntoNode(ms.id, {
-                                  traceId: latestJudgeTrace.id,
-                                  sessionKey: latestJudgeTrace.key,
-                                })
-                              }
-                            >
-                              {isZh ? '查看裁决记录 →' : 'Inspect Judge trace →'}
-                            </button>
-                          ) : null
-                        }
-                        body={
-                          <>
-                            {ms.inboxReason && ms.judgeReasons.length === 0 && (
-                              <div style={{ fontSize: 12.5, color: 'var(--fw-text)', lineHeight: 1.55 }}>
-                                {ms.inboxReason}
-                              </div>
-                            )}
-
-                            {ms.identityError && (
-                              <div style={{ fontSize: 12, color: 'var(--fw-danger)', lineHeight: 1.5 }}>
-                                {ms.identityError}
-                              </div>
-                            )}
-
-                            {ms.failedCommands.length > 0 && (
-                              <div data-testid={`milestone-failed-cmds-${ms.id}`} style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                                {ms.failedCommands.map((fc, idx) => (
-                                  <div key={`${fc.level}-${idx}`} className={styles.findingItem}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                                      <span className={`${styles.pill} ${styles.pillDanger}`}>{fc.level}</span>
-                                      <code style={{ fontSize: 11 }}>{fc.cmd}</code>
-                                      {fc.exitCode !== null && (
-                                        <span style={{ fontSize: 11, color: 'var(--fw-danger)' }}>exit {fc.exitCode}</span>
-                                      )}
-                                    </div>
-                                    {fc.outputTail && (
-                                      <pre
-                                        style={{
-                                          margin: '4px 0 0',
-                                          fontSize: 11,
-                                          fontFamily: 'var(--fw-mono)',
-                                          whiteSpace: 'pre-wrap',
-                                          wordBreak: 'break-word',
-                                          color: 'var(--fw-text-muted)',
-                                        }}
-                                      >
-                                        {fc.outputTail}
-                                      </pre>
-                                    )}
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-
-                            {ms.judgeError && ms.judgeReasons.length === 0 && (
-                              <div style={{ fontSize: 12, color: 'var(--fw-danger)', lineHeight: 1.5 }}>
-                                {isZh ? `Judge 错误：${ms.judgeError}` : `Judge error: ${ms.judgeError}`}
-                              </div>
-                            )}
-
-                            {ms.judgeReasons.length > 0 && (
-                              <div data-testid={`milestone-judge-reasons-${ms.id}`} style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12 }}>
-                                <strong style={{ fontSize: 12, color: 'var(--fw-danger)' }}>
-                                  {isZh ? 'Judge 裁决理由' : 'Judge reasons'}
-                                </strong>
-                                {ms.judgeReasons.map((reason, idx) => (
-                                  <div key={idx} className={styles.findingItem}>
-                                    {reason}
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                          </>
-                        }
-                        noteInput={
-                          <input
-                            type="text"
-                            className={styles.input}
-                            style={{ width: '100%' }}
-                            data-testid={`milestone-triage-guidance-${ms.id}`}
-                            value={guidanceVal}
-                            onChange={e => setMilestoneGuidance(prev => ({ ...prev, [ms.id]: e.target.value }))}
-                            placeholder={
-                              isZh
-                                ? '可选：补充给 Judge 的范围指导，或直接通过里程碑的签核说明…'
-                                : 'Optional: scope guidance for Judge re-verification or milestone sign-off note…'
-                            }
-                          />
-                        }
-                        actions={
-                          <>
-                            <button
-                              type="button"
-                              className={`${styles.btn} ${styles.btnPrimary} ${styles.btnSm}`}
-                              data-testid={`milestone-triage-retry-${ms.id}`}
-                              disabled={snap.busyAction !== null}
-                              onClick={() => void runMilestoneTriage('retry')}
-                            >
-                              {isZh ? '重新验证' : 'Retry Verification'}
-                            </button>
-                            {ms.gatePassed && (
-                              <button
-                                type="button"
-                                className={`${styles.btn} ${styles.btnSm}`}
-                                data-testid={`milestone-triage-accept-${ms.id}`}
-                                disabled={snap.busyAction !== null}
-                                onClick={() => void runMilestoneTriage('accept')}
-                              >
-                                {isZh ? '直接通过里程碑' : 'Accept Milestone'}
-                              </button>
-                            )}
-                          </>
-                        }
-                        error={
-                          errText ? (
-                            <div data-testid={`milestone-triage-error-${ms.id}`} style={{ fontSize: 12, color: 'var(--fw-danger)' }}>
-                              {errText}
-                            </div>
-                          ) : null
-                        }
-                      />
-                    );
-                  })}
-
-                  {(() => {
-                    const ctrl = (snap.state as { control?: { status?: string; message?: string } } | null)?.control;
-                    if (ctrl?.status === 'failed' && typeof ctrl.message === 'string' && ctrl.message.trim()) {
-                      return (
-                        <div
-                          data-testid="main-escalation-control-error"
-                          style={{ fontSize: 12, color: 'var(--fw-danger)', lineHeight: 1.5 }}
-                        >
-                          {isZh ? '最近一次控制命令失败：' : 'Latest control failure: '}
-                          {ctrl.message}
-                        </div>
-                      );
-                    }
-                    return null;
-                  })()}
-
-                  {inboxTriagePackets.length === 0 && executionBlockedSessions.length === 0 && escalatedMilestones.length === 0 && (
-                    <div className={styles.decisionCard} style={{ borderColor: 'var(--fw-warn-border)' }}>
-                      <div style={{ fontSize: 12.5, lineHeight: 1.55 }}>
-                        {latestGeneralInboxReason ||
-                          (isZh
-                            ? '任务已按护栏暂停等待人工检查，查看上方阶段日志并确认后可继续运行。'
-                            : 'Task paused by escalation guardrail; inspect stage logs above before resuming.')}
-                      </div>
+                  {hasControlFailure && (
+                    <div
+                      data-testid="main-escalation-control-error"
+                      style={{ fontSize: 12, color: 'var(--fw-danger)', lineHeight: 1.5 }}
+                    >
+                      {isZh ? '最近一次控制命令失败：' : 'Latest control failure: '}
+                      {ctrl!.message}
                     </div>
                   )}
+
+                  {remainingInboxPackets.length === 0 &&
+                    executionBlockedSessions.length === 0 &&
+                    remainingEscalatedMilestones.length === 0 &&
+                    !hasControlFailure && (
+                      <div className={styles.decisionCard} style={{ borderColor: 'var(--fw-warn-border)' }}>
+                        <div style={{ fontSize: 12.5, lineHeight: 1.55 }}>
+                          {latestGeneralInboxReason ||
+                            (isZh
+                              ? '任务已按护栏暂停等待人工检查，查看上方阶段日志并确认后可继续运行。'
+                              : 'Task paused by escalation guardrail; inspect stage logs above before resuming.')}
+                        </div>
+                      </div>
+                    )}
                 </div>
               </section>
-            )}
+            );
+          })()}
         </div>
       </div>
 

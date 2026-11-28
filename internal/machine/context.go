@@ -292,6 +292,10 @@ func (c *Context) recordSpawnMetrics(a spawnMetricsArgs) {
 			"recovered": a.result.Recovered,
 		}
 	}
+	promptBytes := len(a.prompt)
+	if a.result != nil && a.result.WirePromptBytes > 0 {
+		promptBytes = a.result.WirePromptBytes
+	}
 	if err := metrics.AppendOnce(c.metricsFile, invocationID, receiptDigest, map[string]any{
 		"run-id":                  metricRunID,
 		"role":                    a.role,
@@ -302,7 +306,7 @@ func (c *Context) recordSpawnMetrics(a spawnMetricsArgs) {
 		"provider":                effectiveProvider,
 		"channel":                 channel,
 		"prompt-hash":             promptHash,
-		"prompt-bytes":            len(a.prompt),
+		"prompt-bytes":            promptBytes,
 		"usage":                   usageVal,
 		"cache-hit-rate":          cacheHitRate,
 		"reasoning-chars":         reasoningCharsOf(a.result),

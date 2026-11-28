@@ -263,16 +263,28 @@ test('Bottom-of-stream Escalation Triage Card renders findings, all 3 actions, a
     },
   });
 
-  const summary = ui.container.querySelector('[data-testid="main-escalation-summary"]');
-  assert.ok(summary, 'expected bottom-of-stream persistent escalation triage card');
-  assert.match(summary.textContent, /M01-T02/);
-  assert.match(summary.textContent, /测试已通过/);
-  assert.match(summary.textContent, /F-1/);
-  assert.match(summary.textContent, /b2b flag mismatch/);
-  const retryBtn = summary.querySelector('[data-testid="triage-retry-M01-T02"]');
-  const replanBtn = summary.querySelector('[data-testid="triage-replan-M01-T02"]');
-  const acceptBtn = summary.querySelector('[data-testid="triage-accept-M01-T02"]');
-  const guidanceInput = summary.querySelector('[data-testid="triage-guidance-M01-T02"]');
+  const pktWrapper = ui.container.querySelector('[data-testid="packet-wrapper-M01-T02"]');
+  const pktShell = ui.container.querySelector('[data-testid="packet-shell-M01-T02"]');
+  const card = ui.container.querySelector('[data-testid="triage-card-M01-T02"]');
+  assert.ok(pktWrapper && pktShell && card, 'expected co-located packet escalation triage card');
+  assert.ok(pktWrapper.contains(card), 'expected triage card co-located directly inside its owning packet wrapper');
+  assert.ok(
+    (pktShell.compareDocumentPosition(card) & 4) !== 0,
+    'expected triage card positioned directly below its owning packet shell',
+  );
+  assert.equal(
+    ui.container.querySelector('[data-testid="main-escalation-summary"]'),
+    null,
+    'expected no duplicate bottom escalation summary when all escalated packets are co-located inline',
+  );
+  assert.match(card.textContent, /M01-T02/);
+  assert.match(card.textContent, /测试已通过/);
+  assert.match(card.textContent, /F-1/);
+  assert.match(card.textContent, /b2b flag mismatch/);
+  const retryBtn = card.querySelector('[data-testid="triage-retry-M01-T02"]');
+  const replanBtn = card.querySelector('[data-testid="triage-replan-M01-T02"]');
+  const acceptBtn = card.querySelector('[data-testid="triage-accept-M01-T02"]');
+  const guidanceInput = card.querySelector('[data-testid="triage-guidance-M01-T02"]');
   assert.equal(retryBtn?.textContent?.trim(), '重新执行');
   assert.equal(replanBtn?.textContent?.trim(), '修改要求');
   assert.equal(acceptBtn?.textContent?.trim(), '直接通过');
@@ -285,7 +297,7 @@ test('Bottom-of-stream Escalation Triage Card renders findings, all 3 actions, a
 
   // Click Retry with Guidance -> sends action: 'packet' then calls startRun
   await act(async () => {
-    summary.querySelector('[data-testid="triage-retry-M01-T02"]').click();
+    card.querySelector('[data-testid="triage-retry-M01-T02"]').click();
     await Promise.resolve();
     await Promise.resolve();
   });

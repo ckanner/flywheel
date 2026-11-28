@@ -5,6 +5,19 @@ results are recorded separately in the [release runbook](docs/en/releasing.md)
 and [validation index](docs/validation/README.md). Historical entries retain
 their original language.
 
+## 0.43.3 — 2026-11-27 (Bundled Antigravity 0.3.3 Failure Guard, First-Review Grace, Accurate Wire Prompt Telemetry & Systemic UI Timeline/Status/Co-Located Triage Overhaul)
+
+- **Bundled `@ckanner/dsh-subagent-antigravity@0.3.3` inline-error guard (`plugins/dsh/vendor/antigravity.json`, `plugins/dsh/package.json`)**:
+  - Upgrade bundled Antigravity adapter to `0.3.3`, which detects `agy` exit-0 inline executor errors (such as `⚠ failed to construct executor: unknown model key ...: model not found` with `usage.status === "unknown"`) and marks them `ok: false, outcome: "failed", session.resumable: false` so Flywheel retires poisoned threads instead of retrying them silently.
+- **Go orchestrator review-budget decoupling, bounded inbox feedback & accurate wire prompt telemetry (`internal/machine/units.go`, `internal/drivers/drivers.go`, `internal/machine/sessions.go`, `internal/machine/context.go`)**:
+  - Grant one bounded `first-review-grace` attempt when a packet reaches its base retry limit after L1 retries and encounters its **first-ever** Review `return` (`reviewReturnCount == 1`), preventing L1 failures from prematurely starving the packet's initial code-review fix cycle.
+  - Compact `ps.LastFeedback` inside `packetEscalationFeedback` via `compactInboxLastFeedback` so escalation feedback stays bounded even on verbose L1 failures.
+  - Record exact wire `len(args.Prompt)` via `drivers.Result.WirePromptBytes` in `metrics.jsonl` so verified-incremental delta prompts report truthful wire bytes instead of full-prompt lengths.
+- **Systemic DSH UI timeline segmentation, strict parent-child status invariant & node-co-located `<TriageCard>` (`plugins/dsh/src/client/workflowTimeline.ts`, `ChatStreamView.tsx`, `WorkbenchPage.tsx`, `locale.ts`, `flywheel.module.css`)**:
+  - Segment shared `planning:milestone/M-XX` scopes chronologically into distinct episodes via `buildPlanningScopeGroups` and match them to their exact `planning.requests` records: mid-execution local revisions (`engine-1-17`/`18`/`19`) attach directly beneath their triggering packet instead of jumping above completed packets, and blocked milestone planning requests (`engine-1-20`) render red `规划阻塞` instead of falsely green `已完成`.
+  - Enforce the strict Parent-Child Status Invariant in `buildMilestoneTimeline` and `formatLocalizedStepStatus`: a milestone never displays gray `进行中` with zero running children (`blocked` → red `规划阻塞`, `paused` → amber `已暂停`, `closed` → green `已完成`, `pending` → gray `待开始` with zero `用时 0ms` noise); unify status vocabulary across Main Stream and TopBar (`实时流` → `进行中`, `待执行` → `待开始`, explicit `l1-failed` → `测试未通过` / `修订中`, `l1-passed` → `测试已通过`, `review-failed` → `待返修`, paused `executing` → `已暂停`).
+  - Co-locate human `<TriageCard>` actions directly beneath their owning node: Packet `inbox` triage renders directly under its packet card, blocked/budget-stopped Milestone Planning triage renders inside `① 里程碑拆包规划与审查` with `重试 M-XX 拆包规划`, and Milestone Judge/Gate triage renders inside `③ 里程碑终验与裁决`; reserve the bottom `main-escalation-summary` exclusively for unattached/global blockers.
+
 ## 0.43.2 — 2026-11-27 (Unified 360° Orbiting Light-Ring, Seamless Packet Card Shell & Reviewer `verification-gap` Routing Discipline)
 
 - **True 360° orbiting light-ring & CSS Cascade fix (`plugins/dsh/src/client/styles/flywheel.module.css`, `StyleScope.tsx`)**:

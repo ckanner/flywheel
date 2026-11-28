@@ -4,14 +4,16 @@ import { StyleScope } from '../components/StyleScope.tsx';
 import type { ClientRuntime } from '../context.ts';
 import { buildTraceRoundLabels, formatModelBadge, normalizePackets, resolvePlanningView, resolveTaskDisplayStatus, type DisplayStatusTone } from '../planning.ts';
 import {
-  annotatePlanSteps,
+  buildPlanningScopeGroups,
   compareMilestoneIds,
   computeMilestoneStartTimestamps,
   extractMilestoneIdFromPacket,
   extractMilestoneIdFromScope,
+  formatLocalizedStepStatus,
   formatRetryPlanningLabel,
   inferMilestoneByTimestamp,
   isPacketEffectivelyRunning,
+  type PlanScopeGroup,
   resolveRetryPlanningTarget,
 } from '../workflowTimeline.ts';
 import type { FlywheelStore } from '../store.ts';
@@ -88,7 +90,7 @@ function SettingsIcon() {
 }
 
 function formatNodeDuration(ms?: number | null): string {
-  if (typeof ms !== 'number' || !Number.isFinite(ms) || ms < 0) return '';
+  if (typeof ms !== 'number' || !Number.isFinite(ms) || ms <= 0) return '';
   if (ms < 1000) return `${Math.round(ms)}ms`;
   const sec = Math.round(ms / 1000);
   if (sec < 60) return `${sec}s`;
@@ -96,23 +98,18 @@ function formatNodeDuration(ms?: number | null): string {
 }
 
 function nodeStatusPill(status?: string, running?: boolean, isZh = true): { label: string; cls: string } {
-  const s = (status ?? '').toLowerCase();
-  if (running || ['running', 'executing', 'reviewing'].includes(s)) {
-    return { label: isZh ? '进行中' : 'Live', cls: styles.pillRunning };
-  }
-  if (['done', 'completed', 'passed'].includes(s)) {
-    return { label: isZh ? '已完成' : 'Done', cls: styles.pillSuccess };
-  }
-  if (['failed', 'blocked'].includes(s)) {
-    return { label: isZh ? '失败' : 'Failed', cls: styles.pillDanger };
-  }
-  if (['inbox', 'escalated'].includes(s)) {
-    return { label: isZh ? '待处理' : 'Inbox', cls: styles.pillWarn };
-  }
-  if (['stopped', 'cancelled'].includes(s)) {
-    return { label: isZh ? '已停止' : 'Stopped', cls: styles.pillWarn };
-  }
-  return { label: isZh ? '待执行' : 'Pending', cls: '' };
+  const loc = formatLocalizedStepStatus(status, running, isZh);
+  const cls =
+    loc.tone === 'running'
+      ? styles.pillRunning
+      : loc.tone === 'ok'
+        ? styles.pillSuccess
+        : loc.tone === 'danger'
+          ? styles.pillDanger
+          : loc.tone === 'warn'
+            ? styles.pillWarn
+            : '';
+  return { label: loc.label, cls };
 }
 
 interface AgentSwitchItem {
@@ -341,27 +338,29 @@ export function WorkbenchPage({
       });
     };
 
-    // Group plan/plan-review traces by scope
-    const planTracesByScope = new Map<string, (typeof snap.traces)[number][]>();
-    for (const tr of chronological) {
-      if (tr.role !== 'plan' && tr.role !== 'plan-review') continue;
-      const sk = tr.scope || tr.key || tr.id;
-      const arr = planTracesByScope.get(sk) ?? [];
-      arr.push(tr);
-      planTracesByScope.set(sk, arr);
-    }
+    // Build chronologically segmented plan groups (shared single-source with Main Stream)
+    const allPlanTraces = chronological.filter(tr => tr.role === 'plan' || tr.role === 'plan-review');
+    const segmentedPlanGroups = buildPlanningScopeGroups({
+      traces: allPlanTraces,
+      allTraces: chronological,
+      requests,
+      isZh,
+    });
 
-    const pushPlanScopeSteps = (scopeKey: string, tracesInScope: (typeof snap.traces)[number][], groupKey: string, groupTitle: string) => {
-      const steps = annotatePlanSteps(tracesInScope, isZh);
-      const tag = scopeKey.replace(/^planning:/, '');
-      for (const st of steps) {
+    const pushPlanGroupSteps = (grp: PlanScopeGroup, groupKey: string, groupTitle: string) => {
+      for (const st of grp.steps) {
         const tr = st.trace;
         const modelMeta = formatModelBadge(tr.model, tr.thinking, isZh) || tr.harness || '';
+        const suffix = !grp.isMilestonePlan && grp.triggerPacketId
+          ? ` · ${grp.triggerPacketId}`
+          : !grp.isMilestonePlan && grp.requestId && !grp.requestId.startsWith('milestone/')
+            ? ` · ${grp.requestId}`
+            : '';
         list.push({
           id: tr.scope || tr.id,
           groupKey,
           groupTitle,
-          label: `${st.title}${tag && !tag.startsWith('milestone/') ? ` · ${tag}` : ''}`,
+          label: `${st.title}${suffix}`,
           meta: modelMeta,
           timeText: formatShortTime(tr.startedAt || tr.updatedAt),
           durationText: !tr.running ? formatNodeDuration(tr.durationMs) : '',
@@ -375,35 +374,29 @@ export function WorkbenchPage({
       }
     };
 
-    const assignedScopes = new Set<string>();
+    const assignedGroupScopes = new Set<string>();
     const assignedPackets = new Set<string>();
     const assignedPostTraceIds = new Set<string>();
 
     const milestoneStarts = computeMilestoneStartTimestamps(orderedMilestones, chronological, requests);
 
-    // 2. Milestone-nested groups (chronological M-01 -> M-02 -> ... so active milestone is always at the bottom!)
+    // 2. Milestone-nested groups (chronological M-01 -> M-02 -> ... with packet-linked local revisions placed right after their packet!)
     for (const msId of orderedMilestones) {
       const rawMsStatus = (milestonesMap?.[msId]?.status ?? milestonesMap?.[msId.toLowerCase()]?.status ?? '').toLowerCase();
       const msPackets = packetEntries
         .filter(p => extractMilestoneIdFromPacket(p.id) === msId)
         .sort((a, b) => getDepth(a.id) - getDepth(b.id) || a.id.localeCompare(b.id));
-      const msScopes: Array<{ scopeKey: string; traces: (typeof snap.traces)[number][]; isMainPlan: boolean }> = [];
-      for (const [scopeKey, arr] of planTracesByScope.entries()) {
-        if (assignedScopes.has(scopeKey)) continue;
-        const reqId = scopeKey.replace(/^planning:/, '');
-        const req = requests.find(r => r.id === reqId || `planning:${r.id}` === scopeKey);
-        let mid = extractMilestoneIdFromScope(scopeKey, null, req);
+      const msPlanGroups: PlanScopeGroup[] = [];
+      for (const grp of segmentedPlanGroups) {
+        if (assignedGroupScopes.has(grp.scope)) continue;
+        let mid = grp.milestoneId;
         if (!mid) {
-          const firstTs = Date.parse(arr[0]?.startedAt || arr[0]?.updatedAt || '') || 0;
+          const firstTs = Date.parse(grp.items[0]?.startedAt || grp.items[0]?.updatedAt || '') || 0;
           mid = inferMilestoneByTimestamp(firstTs, orderedMilestones, milestoneStarts);
         }
         if (mid === msId) {
-          msScopes.push({
-            scopeKey,
-            traces: arr,
-            isMainPlan: scopeKey.includes(`milestone/${msId}`) || (req?.scope === 'milestone' && Boolean(req?.['scope-id'])),
-          });
-          assignedScopes.add(scopeKey);
+          msPlanGroups.push(grp);
+          assignedGroupScopes.add(grp.scope);
         }
       }
       const msPostTraces = chronological.filter(
@@ -411,33 +404,41 @@ export function WorkbenchPage({
           (tr.role === 'judge' || (tr.role === 'frontend-ux-review' && (!tr.scope || !packetIdSet.has(tr.scope)))) &&
           extractMilestoneIdFromScope(tr.scope) === msId,
       );
-      if (msPackets.length === 0 && msScopes.length === 0 && msPostTraces.length === 0) continue;
+      if (msPackets.length === 0 && msPlanGroups.length === 0 && msPostTraces.length === 0) continue;
 
       const msRunning =
-        msScopes.some(s => s.traces.some(t => t.running)) ||
+        msPlanGroups.some(g => g.running) ||
         msPostTraces.some(t => t.running) ||
         msPackets.some(p => isPacketEffectivelyRunning(p, chronological, snap.running));
+      const msBlocked = !msRunning && msPlanGroups.some(g => g.tone === 'danger');
       const statusSuffix =
         rawMsStatus === 'closed'
-          ? (isZh ? ' · 已完成' : ' · Closed')
+          ? (isZh ? ' · 已完成' : ' · Completed')
           : msRunning
-            ? (isZh ? ' · 进行中' : ' · Live')
-            : '';
+            ? (isZh ? ' · 进行中' : ' · Running')
+            : msBlocked
+              ? (isZh ? ' · 规划阻塞' : ' · Blocked')
+              : '';
       const groupKey = `milestone:${msId}`;
       const groupTitle = isZh ? `里程碑 ${msId}${statusSuffix}` : `Milestone ${msId}${statusSuffix}`;
 
-      // 2a. Milestone planning scopes first
-      for (const s of msScopes.filter(x => x.isMainPlan)) {
-        pushPlanScopeSteps(s.scopeKey, s.traces, groupKey, groupTitle);
+      // 2a. Initial milestone planning scopes first
+      for (const g of msPlanGroups.filter(x => x.isMilestonePlan)) {
+        pushPlanGroupSteps(g, groupKey, groupTitle);
       }
-      // 2b. Milestone execution packets in wave order
+      // 2b. Milestone execution packets in wave order, with packet-triggered local revisions immediately after their packet
+      const renderedRevScopes = new Set<string>();
       for (const p of msPackets) {
         assignedPackets.add(p.id);
         pushPacketItem(p, groupKey, groupTitle);
+        for (const rev of msPlanGroups.filter(x => !x.isMilestonePlan && x.triggerPacketId === p.id)) {
+          renderedRevScopes.add(rev.scope);
+          pushPlanGroupSteps(rev, groupKey, groupTitle);
+        }
       }
-      // 2c. Local packet/mid-exec revisions within this milestone
-      for (const s of msScopes.filter(x => !x.isMainPlan)) {
-        pushPlanScopeSteps(s.scopeKey, s.traces, groupKey, groupTitle);
+      // 2c. Any remaining non-packet-triggered local revisions within this milestone
+      for (const rev of msPlanGroups.filter(x => !x.isMilestonePlan && !renderedRevScopes.has(x.scope))) {
+        pushPlanGroupSteps(rev, groupKey, groupTitle);
       }
       // 2d. Milestone verification (Judge / UX review)
       for (const tr of msPostTraces) {
@@ -463,9 +464,9 @@ export function WorkbenchPage({
     }
 
     // 3. Fallback for any non-milestone plan scopes, packets, or post-packet traces
-    for (const [scopeKey, arr] of planTracesByScope.entries()) {
-      if (assignedScopes.has(scopeKey)) continue;
-      pushPlanScopeSteps(scopeKey, arr, 'fallback-plan', isZh ? '实施拆包规划' : 'Milestone Plan');
+    for (const grp of segmentedPlanGroups) {
+      if (assignedGroupScopes.has(grp.scope)) continue;
+      pushPlanGroupSteps(grp, 'fallback-plan', isZh ? '实施拆包规划' : 'Milestone Plan');
     }
     const remainingPackets = packetEntries
       .filter(p => !assignedPackets.has(p.id))

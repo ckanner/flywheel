@@ -157,7 +157,7 @@ func executorSelfChangedFiles(ps *state.PacketState) []string {
 
 func packetEscalationFeedback(ps *state.PacketState) string {
 	if ps != nil && ps.LastFeedback != nil {
-		raw, _ := json.Marshal(ps.LastFeedback)
+		raw, _ := json.Marshal(compactInboxLastFeedback(ps.LastFeedback))
 		return string(raw)
 	}
 	if ps != nil && ps.Evidence.Review != nil {
@@ -914,12 +914,19 @@ func (c *Context) processPacket(packet *contract.Packet, opts processOpts) (outc
 		}
 		outcome := c.failAttempt(packet, code, nil, nil)
 		baseMax := c.packetMaxRetries(packet)
-		if code == errReviewReturned && !c.quick() && outcome != "spin" &&
-			evaluateExecutionConvergenceGrace(review.Converging, review.OpenFindings, ps.FailedAttempts, baseMax, convergenceGraceUsed(ps)) {
-			c.recordRetry(ps, "attempt", string(code), "convergence-grace")
-			c.Log(fmt.Sprintf("%s: granting bounded +1 convergence grace (%d open findings, converging)", id, review.OpenFindings))
-			c.save()
-			continue
+		if code == errReviewReturned && !c.quick() && outcome != "spin" {
+			if reviewReturnCount(ps) == 1 && ps.FailedAttempts >= baseMax && !gracePolicyUsed(ps, "first-review-grace") {
+				c.recordRetry(ps, "attempt", string(code), "first-review-grace")
+				c.Log(fmt.Sprintf("%s: granting bounded +1 first-review grace after prior L1 retries (%d open findings)", id, review.OpenFindings))
+				c.save()
+				continue
+			}
+			if evaluateExecutionConvergenceGrace(review.Converging, review.OpenFindings, ps.FailedAttempts, baseMax, gracePolicyUsed(ps, "convergence-grace")) {
+				c.recordRetry(ps, "attempt", string(code), "convergence-grace")
+				c.Log(fmt.Sprintf("%s: granting bounded +1 convergence grace (%d open findings, converging)", id, review.OpenFindings))
+				c.save()
+				continue
+			}
 		}
 		effectiveMax := c.effectiveMaxRetries(packet, ps)
 		reviewCapReached := code == errReviewReturned && c.Config.Guardrails.MaxReviewRounds != nil && reviewReturnCount(ps) >= *c.Config.Guardrails.MaxReviewRounds && !review.Converging
@@ -948,13 +955,17 @@ func (c *Context) packetMaxRetries(packet *contract.Packet) int {
 
 func (c *Context) effectiveMaxRetries(packet *contract.Packet, ps *state.PacketState) int {
 	maxRetries := c.packetMaxRetries(packet)
-	if convergenceGraceUsed(ps) {
+	if gracePolicyUsed(ps, "convergence-grace") || gracePolicyUsed(ps, "first-review-grace") {
 		maxRetries++
 	}
 	return maxRetries
 }
 
 func convergenceGraceUsed(ps *state.PacketState) bool {
+	return gracePolicyUsed(ps, "convergence-grace")
+}
+
+func gracePolicyUsed(ps *state.PacketState, policy string) bool {
 	for i := len(ps.RetryHistory) - 1; i >= 0; i-- {
 		entry, ok := ps.RetryHistory[i].(map[string]any)
 		if !ok {
@@ -963,7 +974,7 @@ func convergenceGraceUsed(ps *state.PacketState) bool {
 		if entry["policy"] == "return-to-planner" || entry["policy"] == "human-triage" {
 			break
 		}
-		if entry["policy"] == "convergence-grace" {
+		if entry["policy"] == policy {
 			return true
 		}
 	}

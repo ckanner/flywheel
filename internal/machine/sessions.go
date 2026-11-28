@@ -628,6 +628,7 @@ func (c *Context) invokeScoped(role, scope string, args drivers.CallArgs, call f
 			}
 		}
 		result = call(args)
+		result.WirePromptBytes = len(args.Prompt)
 		liveTrace.finish(result)
 		if args.Prewarm != nil {
 			if err := args.Prewarm.Close(); err != nil {

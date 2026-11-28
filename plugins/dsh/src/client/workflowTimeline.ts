@@ -46,11 +46,15 @@ export interface PlanScopeGroup {
 export interface MilestoneTimelineNode {
   id: string;
   title: string;
-  status: 'closed' | 'in-progress' | 'escalated' | 'budget-stopped' | 'pending';
+  status: 'closed' | 'running' | 'blocked' | 'budget-stopped' | 'escalated' | 'paused' | 'pending';
+  tone: SemanticTone;
+  statusLabel: string;
   isClosed: boolean;
   isRunning: boolean;
   isAttention: boolean;
   isPending: boolean;
+  hasBlockedPlanning: boolean;
+  planningBlockedDetail: string | null;
   planningGroups: PlanScopeGroup[];
   localRevisions: PlanScopeGroup[];
   packets: PacketNode[];
@@ -244,25 +248,47 @@ export function formatRetryPlanningLabel(target: ResolvedRetryTarget, isZh: bool
   return isZh ? '重新尝试架构设计' : 'Retry Architecture Design';
 }
 
-export function formatLocalizedStepStatus(status?: string, running?: boolean, isZh = true): {
+export function formatLocalizedStepStatus(
+  status?: string,
+  running?: boolean,
+  isZh = true,
+  isRevising = false,
+): {
   label: string;
   tone: SemanticTone;
 } {
-  if (running) return { label: isZh ? '进行中' : 'Live', tone: 'running' };
+  if (running) return { label: isZh ? '进行中' : 'Running', tone: 'running' };
+  if (isRevising) return { label: isZh ? '修订中' : 'Revising', tone: 'running' };
   const s = (status ?? '').toLowerCase();
+  if (['running', 'executing', 'reviewing', 'verifying'].includes(s)) {
+    // When liveness is explicitly false (task paused/interrupted mid-step), never claim active Running.
+    if (running === false) {
+      return { label: isZh ? '已暂停' : 'Paused', tone: 'warn' };
+    }
+    return { label: isZh ? '进行中' : 'Running', tone: 'running' };
+  }
   if (['completed', 'done', 'passed', 'ok', 'closed'].includes(s)) {
     return { label: isZh ? '已完成' : 'Completed', tone: 'ok' };
   }
+  if (s === 'l1-passed') {
+    return { label: isZh ? '测试已通过' : 'Tests Passed', tone: 'ok' };
+  }
+  if (s === 'l1-failed') {
+    return { label: isZh ? '测试未通过' : 'Tests Failed', tone: 'warn' };
+  }
+  if (['review-failed', 'returned'].includes(s)) {
+    return { label: isZh ? '待返修' : 'Needs Fix', tone: 'warn' };
+  }
   if (['failed', 'error', 'blocked', 'budget-stopped'].includes(s)) {
-    return { label: isZh ? '失败' : 'Failed', tone: 'danger' };
+    return { label: isZh ? '已阻塞' : 'Blocked', tone: 'danger' };
   }
   if (['cancelled', 'stopped'].includes(s)) {
     return { label: isZh ? '已停止' : 'Stopped', tone: 'warn' };
   }
   if (['inbox', 'escalated', 'awaiting-input'].includes(s)) {
-    return { label: isZh ? '待处理' : 'Action Needed', tone: 'warn' };
+    return { label: isZh ? '待人工处理' : 'Action Needed', tone: 'warn' };
   }
-  return { label: isZh ? '待执行' : 'Pending', tone: 'neutral' };
+  return { label: isZh ? '待开始' : 'Pending', tone: 'neutral' };
 }
 
 function detectReviewVerdict(tr: TraceSummary): 'pass' | 'revise' | 'blocked' | 'needs-user-decision' | null {
@@ -309,7 +335,7 @@ export function annotatePlanSteps(items: TraceSummary[], isZh: boolean): Annotat
         ? (isZh ? `第 ${round} 轮 · ${roleBase}（校验重试 #${retryIndex}）` : `R${round} · ${roleBase} (Retry #${retryIndex})`)
         : (isZh ? `第 ${round} 轮 · ${roleBase}` : `R${round} · ${roleBase}`);
       const statusLabel = tr.running
-        ? (isZh ? '实时流' : 'Live')
+        ? (isZh ? '进行中' : 'Running')
         : nextIsSameRoundPlan && baseStatus.tone === 'ok'
           ? (isZh ? '校验重试' : 'Validation Retry')
           : baseStatus.label;
@@ -333,7 +359,7 @@ export function annotatePlanSteps(items: TraceSummary[], isZh: boolean): Annotat
       const verdict = tr.running ? null : detectReviewVerdict(tr);
       const roleBase = isZh ? '实施计划审查' : 'Plan Review';
       const title = isZh ? `第 ${round} 轮 · ${roleBase}` : `R${round} · ${roleBase}`;
-      let statusLabel = tr.running ? (isZh ? '实时流' : 'Live') : baseStatus.label;
+      let statusLabel = tr.running ? (isZh ? '进行中' : 'Running') : baseStatus.label;
       let tone: SemanticTone = tr.running ? 'running' : baseStatus.tone;
       if (!tr.running && baseStatus.tone === 'ok') {
         if (verdict === 'pass') {
@@ -376,7 +402,7 @@ export function resolvePlanGroupTone(
   if (running) return { tone: 'running', statusLabel: isZh ? '进行中' : 'Running' };
   const rs = (reqStatus ?? '').toLowerCase();
   if (rs === 'budget-stopped') return { tone: 'danger', statusLabel: isZh ? '已达轮次上限' : 'Round Limit' };
-  if (rs === 'blocked' || rs === 'failed') return { tone: 'danger', statusLabel: isZh ? '已阻塞' : 'Blocked' };
+  if (rs === 'blocked' || rs === 'failed') return { tone: 'danger', statusLabel: isZh ? '规划阻塞' : 'Plan Blocked' };
   if (rs === 'cancelled') return { tone: 'warn', statusLabel: isZh ? '已取消' : 'Cancelled' };
   if (rs === 'completed') return { tone: 'ok', statusLabel: isZh ? '已完成' : 'Completed' };
   const last = steps[steps.length - 1];
@@ -385,6 +411,245 @@ export function resolvePlanGroupTone(
     return { tone: 'warn', statusLabel: isZh ? '待修订' : 'Needs Revision' };
   }
   return { tone: 'ok', statusLabel: isZh ? '已完成' : 'Completed' };
+}
+
+function summarizeFeedbackShort(feedback: string | undefined, isZh: boolean): {
+  packetId: string | null;
+  summary: string | null;
+} {
+  const text = (feedback || '').trim();
+  if (!text) return { packetId: null, summary: null };
+  const pktMatch = /Returned packet\s+(M\d+-T\d+)/i.exec(text) ?? /\b(M\d+-T\d+)\b/i.exec(text);
+  const packetId = pktMatch?.[1]?.toUpperCase() ?? null;
+  if (text.includes('verification-gap') || text.includes('strengthen')) {
+    return {
+      packetId,
+      summary: isZh
+        ? `${packetId ? `${packetId} ` : ''}审查发现验收缺口（verification-gap），自动退回规划层补强 L1 验收契约`
+        : `${packetId ? `${packetId} ` : ''}verification-gap detected — strengthening acceptance contract`,
+    };
+  }
+  if (text.includes('L1_FAILED')) {
+    return {
+      packetId,
+      summary: isZh
+        ? `${packetId ? `${packetId} ` : ''}L1 验收连续未通过，自动退回规划层修订契约`
+        : `${packetId ? `${packetId} ` : ''}L1 verification failed — returned to planner for contract revision`,
+    };
+  }
+  if (text.includes('Returned packet ')) {
+    const reasonMatch = /"reasons"\s*:\s*\[\s*"([^"]{1,180})/.exec(text);
+    const reason = reasonMatch ? reasonMatch[1]!.replace(/\\n/g, ' ').replace(/\\"/g, '"') : '';
+    return {
+      packetId,
+      summary: reason
+        ? `${isZh ? '触发原因' : 'Trigger'}：${reason}${reason.length >= 175 ? '…' : ''}`
+        : isZh
+          ? `${packetId ? `${packetId} ` : ''}退回规划层进行契约修订`
+          : `${packetId ? `${packetId} ` : ''}returned to planner for contract revision`,
+    };
+  }
+  const firstLine = text.split('\n')[0]?.trim() ?? '';
+  const summary = firstLine.length > 160 ? `${firstLine.slice(0, 159)}…` : firstLine;
+  return {
+    packetId,
+    summary: summary || (packetId ? (isZh ? `由 ${packetId} 触发修订` : `Triggered by ${packetId}`) : null),
+  };
+}
+
+/**
+ * Segments `plan` / `plan-review` traces chronologically so shared milestone
+ * scopes (`planning:milestone/M-02`) split into:
+ *  - Episode 0 (before any packet of M-02 executes): initial milestone plan
+ *  - Episode 1..N (after packet execution): packet-linked local revisions
+ * Also matches milestone planning requests (`scope: 'milestone', scope-id: 'M-XX'`)
+ * accurately even when `req.id` is `engine-1-20` rather than `milestone/M-XX`.
+ */
+export function buildPlanningScopeGroups(params: {
+  traces: TraceSummary[];
+  allTraces: TraceSummary[];
+  requests: PlanningRequestRecord[];
+  isZh: boolean;
+}): PlanScopeGroup[] {
+  const { traces, allTraces, requests, isZh } = params;
+  const sorted = [...traces].sort((a, b) => {
+    const ta = Date.parse(a.startedAt || a.updatedAt || '') || 0;
+    const tb = Date.parse(b.startedAt || b.updatedAt || '') || 0;
+    return ta - tb;
+  });
+
+  // Collect packet execution/review events per milestone in chronological order.
+  const execEventsByMs = new Map<string, Array<{ ts: number; packetId: string }>>();
+  for (const tr of allTraces) {
+    if (!['execute', 'review', 'frontend-ux-review'].includes(tr.role) || !tr.scope) continue;
+    const pktId = tr.scope.replace(/^final:/, '').toUpperCase();
+    const mid = extractMilestoneIdFromPacket(pktId);
+    if (!mid) continue;
+    const ts = Date.parse(tr.startedAt || tr.updatedAt || '') || 0;
+    if (ts <= 0) continue;
+    const list = execEventsByMs.get(mid) ?? [];
+    list.push({ ts, packetId: pktId });
+    execEventsByMs.set(mid, list);
+  }
+  for (const list of execEventsByMs.values()) {
+    list.sort((a, b) => a.ts - b.ts);
+  }
+
+  // Group raw traces by scope first while preserving chronological order.
+  const byScope = new Map<string, TraceSummary[]>();
+  for (const tr of sorted) {
+    const scopeKey = tr.scope || tr.key || tr.id;
+    const list = byScope.get(scopeKey) ?? [];
+    list.push(tr);
+    byScope.set(scopeKey, list);
+  }
+
+  const groups: PlanScopeGroup[] = [];
+
+  for (const [scopeKey, scopeTraces] of byScope.entries()) {
+    const rawReqId = scopeKey.replace(/^planning:/, '');
+    const directReq = requests.find(r => r.id === rawReqId || `planning:${r.id}` === scopeKey) ?? null;
+    const directMilestoneMatch = /^milestone\/(M-\d{2,})$/i.exec(rawReqId);
+    const msIdFromScope = directMilestoneMatch
+      ? directMilestoneMatch[1]!.toUpperCase()
+      : extractMilestoneIdFromScope(scopeKey, null, directReq);
+
+    // If this is a shared `planning:milestone/M-XX` scope, split into chronological episodes
+    // whenever packet executions occurred between planning traces.
+    if (directMilestoneMatch && msIdFromScope) {
+      const msExecs = execEventsByMs.get(msIdFromScope) ?? [];
+      const firstExecTs = msExecs[0]?.ts ?? Number.POSITIVE_INFINITY;
+      const msRequests = requests.filter(
+        r => r.scope === 'milestone' && (r['scope-id'] ?? '').toUpperCase() === msIdFromScope,
+      );
+
+      interface Episode {
+        isInitial: boolean;
+        triggerPacketId: string | null;
+        items: TraceSummary[];
+      }
+      const episodes: Episode[] = [];
+      let current: Episode | null = null;
+      let lastTraceTs = 0;
+
+      for (const tr of scopeTraces) {
+        const ts = Date.parse(tr.startedAt || tr.updatedAt || '') || 0;
+        const isInitial = ts <= 0 || ts < firstExecTs;
+        if (isInitial) {
+          if (!current || !current.isInitial) {
+            current = { isInitial: true, triggerPacketId: null, items: [] };
+            episodes.push(current);
+          }
+          current.items.push(tr);
+        } else {
+          // Find any packet execution between lastTraceTs and ts.
+          const intervening = msExecs.filter(ev => ev.ts > lastTraceTs && ev.ts <= ts);
+          const triggerPkt =
+            intervening[intervening.length - 1]?.packetId ??
+            msExecs.filter(ev => ev.ts <= ts).pop()?.packetId ??
+            null;
+          if (!current || current.isInitial || intervening.length > 0) {
+            current = { isInitial: false, triggerPacketId: triggerPkt, items: [] };
+            episodes.push(current);
+          }
+          current.items.push(tr);
+        }
+        if (ts > 0) lastTraceTs = ts;
+      }
+
+      // Match each episode to its corresponding milestone PlanningRequestRecord.
+      const nonPacketReqs = msRequests.filter(r => !summarizeFeedbackShort(r.feedback, isZh).packetId);
+      const usedReqIds = new Set<string>();
+
+      episodes.forEach((ep, epIdx) => {
+        let matchedReq: PlanningRequestRecord | null = null;
+        if (ep.isInitial) {
+          // Prefer the latest active/blocked/completed non-packet milestone request (ignoring cancelled unless all cancelled).
+          const nonCancelled = nonPacketReqs.filter(r => (r.status ?? '').toLowerCase() !== 'cancelled');
+          const pool = nonCancelled.length > 0 ? nonCancelled : nonPacketReqs;
+          matchedReq = pool[pool.length - 1] ?? msRequests[msRequests.length - 1] ?? null;
+        } else {
+          // Match chronologically to the next unused milestone request triggered by this packet.
+          const pktReqs = msRequests.filter(r => {
+            if (usedReqIds.has(r.id)) return false;
+            const fbPkt = summarizeFeedbackShort(r.feedback, isZh).packetId;
+            return ep.triggerPacketId ? fbPkt === ep.triggerPacketId : Boolean(fbPkt);
+          });
+          matchedReq = pktReqs[0] ?? null;
+          if (matchedReq) usedReqIds.add(matchedReq.id);
+        }
+
+        const running = ep.items.some(t => t.running);
+        const totalDurationMs = ep.items.reduce(
+          (sum, t) => sum + (typeof t.durationMs === 'number' && Number.isFinite(t.durationMs) ? t.durationMs : 0),
+          0,
+        );
+        const steps = annotatePlanSteps(ep.items, isZh);
+        const reqStatus = matchedReq?.status;
+        const resolved = resolvePlanGroupTone(steps, reqStatus, running, isZh);
+        const fb = summarizeFeedbackShort(matchedReq?.feedback, isZh);
+        const reqId = matchedReq?.id ?? (ep.isInitial ? rawReqId : `${rawReqId}#rev-${epIdx}`);
+        const label = ep.isInitial
+          ? (isZh ? `里程碑拆包规划 · ${msIdFromScope}` : `Milestone Plan · ${msIdFromScope}`)
+          : ep.triggerPacketId
+            ? (isZh ? `局部修订 · ${ep.triggerPacketId}` : `Local Revision · ${ep.triggerPacketId}`)
+            : (isZh ? `计划修订 · ${reqId}` : `Plan Revision · ${reqId}`);
+
+        groups.push({
+          scope: ep.isInitial ? scopeKey : `${scopeKey}#rev-${epIdx}`,
+          requestId: reqId,
+          milestoneId: msIdFromScope,
+          isMilestonePlan: ep.isInitial,
+          label,
+          triggerPacketId: ep.isInitial ? null : (ep.triggerPacketId ?? fb.packetId),
+          triggerSummary: ep.isInitial ? null : fb.summary,
+          items: ep.items,
+          steps,
+          running,
+          tone: resolved.tone,
+          statusLabel: resolved.statusLabel,
+          totalDurationMs,
+        });
+      });
+      continue;
+    }
+
+    // Standard single-request scope (e.g. `planning:engine-1-6`, `planning:strengthen-m01t01-l1`).
+    const fb = summarizeFeedbackShort(directReq?.feedback, isZh);
+    const scopePkt = fb.packetId || (/\b(M\d+-T\d+)\b/i.exec(rawReqId)?.[1]?.toUpperCase() ?? null);
+    const milestoneId = extractMilestoneIdFromScope(scopeKey, scopePkt, directReq);
+    const isMilestonePlan =
+      rawReqId.startsWith('milestone/') ||
+      (directReq?.scope === 'milestone' && Boolean(directReq?.['scope-id']) && !scopePkt);
+    const running = scopeTraces.some(t => t.running);
+    const totalDurationMs = scopeTraces.reduce(
+      (sum, t) => sum + (typeof t.durationMs === 'number' && Number.isFinite(t.durationMs) ? t.durationMs : 0),
+      0,
+    );
+    const steps = annotatePlanSteps(scopeTraces, isZh);
+    const resolved = resolvePlanGroupTone(steps, directReq?.status, running, isZh);
+    const label = isMilestonePlan && milestoneId
+      ? (isZh ? `里程碑拆包规划 · ${milestoneId}` : `Milestone Plan · ${milestoneId}`)
+      : (isZh ? `计划修订 · ${rawReqId}` : `Plan Revision · ${rawReqId}`);
+
+    groups.push({
+      scope: scopeKey,
+      requestId: rawReqId,
+      milestoneId,
+      isMilestonePlan,
+      label,
+      triggerPacketId: scopePkt,
+      triggerSummary: fb.summary,
+      items: scopeTraces,
+      steps,
+      running,
+      tone: resolved.tone,
+      statusLabel: resolved.statusLabel,
+      totalDurationMs,
+    });
+  }
+
+  return groups;
 }
 
 /**
@@ -403,6 +668,7 @@ export function buildMilestoneTimeline(params: {
   taskStatus?: string | null;
   taskRunning?: boolean;
   planningPhase?: string | null;
+  isZh?: boolean;
 }): {
   milestones: MilestoneTimelineNode[];
   unassignedPackets: PacketNode[];
@@ -419,6 +685,7 @@ export function buildMilestoneTimeline(params: {
     taskStatus,
     taskRunning = false,
     planningPhase,
+    isZh = true,
   } = params;
 
   const idSet = new Set<string>();
@@ -525,25 +792,103 @@ export function buildMilestoneTimeline(params: {
 
     const isClosed = rawStatus === 'closed';
     const isCurrent = curMsUpper === id;
+    const msReqs = (requests ?? []).filter(
+      r => r.scope === 'milestone' && (r['scope-id'] ?? '').toUpperCase() === id,
+    );
+    const latestNonCancelledReq = [...msReqs].reverse().find(r => (r.status ?? '').toLowerCase() !== 'cancelled') ?? null;
+    const latestReqStatus = (latestNonCancelledReq?.status ?? '').toLowerCase();
+
     const isBudgetStopped =
       !isClosed &&
-      isCurrent &&
-      (normalizedTaskStatus === 'budget-stopped' || normalizedPlanPhase === 'budget-stopped');
+      !hasRunningTrace &&
+      ((isCurrent && (normalizedTaskStatus === 'budget-stopped' || normalizedPlanPhase === 'budget-stopped')) ||
+        latestReqStatus === 'budget-stopped' ||
+        msPlanning.some(g => !g.running && g.statusLabel === (isZh ? '已达轮次上限' : 'Round Limit')));
+    const hasBlockedPlanning =
+      !isClosed &&
+      !hasRunningTrace &&
+      ((isCurrent && (normalizedPlanPhase === 'blocked' || normalizedPlanPhase === 'failed')) ||
+        latestReqStatus === 'blocked' ||
+        latestReqStatus === 'failed' ||
+        msPlanning.some(g => !g.running && g.tone === 'danger') ||
+        msRevisions.some(g => !g.running && g.tone === 'danger'));
+    const rawGate = rawState?.gate as { pass?: boolean; judge?: { verdict?: string; error?: string } } | undefined;
+    const hasFailedGate = Boolean(
+      rawGate &&
+        (rawGate.pass === false ||
+          (typeof rawGate.judge?.verdict === 'string' && rawGate.judge.verdict !== '' && rawGate.judge.verdict !== 'pass') ||
+          Boolean(rawGate.judge?.error)),
+    );
     const isEscalated =
       !isClosed &&
+      !hasRunningTrace &&
       (rawStatus === 'escalated' ||
+        hasFailedGate ||
         (isCurrent && normalizedTaskStatus === 'escalated') ||
         msPackets.some(p => ['inbox', 'blocked', 'failed', 'escalated'].includes((p.status ?? '').toLowerCase())));
 
+    const hasStarted =
+      rawStatus === 'in-progress' ||
+      isCurrent ||
+      hasRunningTrace ||
+      msPackets.length > 0 ||
+      msPlanning.length > 0 ||
+      msRevisions.length > 0 ||
+      msVerify.length > 0;
+
+    // Strict parent-child status invariant:
+    // A milestone can show "进行中" / tone="running" ONLY when actively running (child trace running or engine transitioning).
+    // Never render a gray "进行中" badge with zero running children!
     let status: MilestoneTimelineNode['status'] = 'pending';
+    let tone: SemanticTone = 'neutral';
+    let statusLabel = isZh ? '待开始' : 'Pending';
+    let isRunning = false;
+
     if (isClosed) {
       status = 'closed';
+      tone = 'ok';
+      statusLabel = isZh ? '已完成' : 'Completed';
+    } else if (hasRunningTrace) {
+      status = 'running';
+      tone = 'running';
+      statusLabel = isZh ? '进行中' : 'Running';
+      isRunning = true;
     } else if (isBudgetStopped) {
       status = 'budget-stopped';
+      tone = 'danger';
+      statusLabel = isZh ? '已达轮次上限' : 'Round Limit';
+    } else if (hasBlockedPlanning) {
+      status = 'blocked';
+      tone = 'danger';
+      statusLabel = isZh ? '规划阻塞' : 'Plan Blocked';
     } else if (isEscalated) {
       status = 'escalated';
-    } else if (rawStatus === 'in-progress' || isCurrent || hasRunningTrace || msPackets.length > 0 || msPlanning.length > 0) {
-      status = 'in-progress';
+      tone = 'warn';
+      statusLabel = isZh ? '待人工处理' : 'Needs Action';
+    } else if (hasStarted) {
+      if (taskRunning && isCurrent) {
+        status = 'running';
+        tone = 'running';
+        statusLabel = isZh ? '进行中' : 'Running';
+        isRunning = true;
+      } else {
+        status = 'paused';
+        tone = 'warn';
+        statusLabel = isZh ? '已暂停' : 'Paused';
+      }
+    }
+
+    let planningBlockedDetail: string | null = null;
+    if (hasBlockedPlanning || isBudgetStopped) {
+      const latestPlanTrace = [...msPlanning, ...msRevisions]
+        .flatMap(g => g.items)
+        .sort((a, b) => (Date.parse(a.startedAt || a.updatedAt || '') || 0) - (Date.parse(b.startedAt || b.updatedAt || '') || 0))
+        .pop();
+      planningBlockedDetail =
+        latestPlanTrace?.errorSummary ||
+        latestPlanTrace?.preview ||
+        latestNonCancelledReq?.feedback ||
+        null;
     }
 
     let totalDurationMs = 0;
@@ -563,10 +908,14 @@ export function buildMilestoneTimeline(params: {
       id,
       title: titleById.get(id) || id,
       status,
+      tone,
+      statusLabel,
       isClosed,
-      isRunning: hasRunningTrace,
-      isAttention: isEscalated || isBudgetStopped,
+      isRunning,
+      isAttention: status === 'escalated' || status === 'budget-stopped' || status === 'blocked',
       isPending: status === 'pending',
+      hasBlockedPlanning: hasBlockedPlanning || isBudgetStopped,
+      planningBlockedDetail,
       planningGroups: msPlanning,
       localRevisions: msRevisions,
       packets: msPackets,

@@ -1,20 +1,20 @@
 {
   "package": "@ckanner/dsh-subagent-antigravity",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "sourceRepository": "https://github.com/ckanner/dsh-subagent-antigravity",
   "sourceDirectory": ".",
-  "sourceCommit": "4a5f2f207a33bbf37281ceb73b1ed6c0ae038b58",
-  "sourceTree": "e53b3bc5c28f68463579f3353d845b0f50a205a7",
-  "sourceDirectoryTree": "e53b3bc5c28f68463579f3353d845b0f50a205a7",
-  "verificationNote": "Official Antigravity ACP default + unattended ACP machine transport; v0.3.2 marks ACP per-turn session/prompt usage as scope='turn' (keeping legacy headless CLI scope='conversation') and forwards redacted single-line [tool] and throttled [thought] progress frames without polluting outputText; passed 97/97 tests and npm run test:package.",
-  "tarball": "ckanner-dsh-subagent-antigravity-0.3.2.tgz",
-  "sha256": "4d0fe0c40aac355b4140462ff4f82aaecb06be5de7121bfc5dd888d21cac66d0",
-  "integrity": "sha512-y3meEiW6RoYboGfJPzR5gCLf+5EtOVzhmO+Es7VzQM9sJOSb6PZsb4uSsACmzT5y75G9eiAChCc/doRJlje0ag==",
+  "sourceCommit": "a3c687f56c5302d378004461d062d4ae2cf04345",
+  "sourceTree": "576aff38639a8ddc2b9bba9448306203e8a55c93",
+  "sourceDirectoryTree": "576aff38639a8ddc2b9bba9448306203e8a55c93",
+  "verificationNote": "Official Antigravity ACP default + unattended ACP machine transport; v0.3.3 classifies inline agy executor-construction error banners emitted on end_turn with usage.status==='unknown' as non-resumable failures so orchestrators retire poisoned threads cleanly; passed 98/98 tests and npm run test:package.",
+  "tarball": "ckanner-dsh-subagent-antigravity-0.3.3.tgz",
+  "sha256": "8e630ce6a988442d55064514425c205a14f96be6fbf4d6492f8468cfd18796ff",
+  "integrity": "sha512-IuWGVhg7qleV9CPVBMjUfzrPFKpMrhZlWVYXbb1bkIX930uztyvReWDLQCDHeRgDFT8y1tnjweiQrxW1qwbjug==",
   "license": "MIT",
   "registryReleaseVerified": false,
   "buildToolchain": {
     "node": "26.12.1",
     "npm": "11.20.0"
   },
-  "bytes": 119200
+  "bytes": 119665
 }

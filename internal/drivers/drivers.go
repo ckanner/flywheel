@@ -43,18 +43,19 @@ type SessionOutcome struct {
 type Result struct {
 	NativeReceipt json.RawMessage `json:"nativeReceipt,omitempty"`
 	// watchdog 原始量。
-	ExitCode     *int   `json:"exitCode"`
-	Signal       string `json:"signal"`
-	TimedOut     bool   `json:"timedOut"`
-	Cancelled    bool   `json:"cancelled"`
-	IdleTimedOut bool   `json:"idleTimedOut"`
-	WallTimedOut bool   `json:"wallTimedOut"`
-	Stdout       string `json:"stdout"`
-	Stderr       string `json:"stderr"`
-	Truncated    bool   `json:"truncated"`
-	DurationMS   int64  `json:"durationMs"`
-	SpawnError   string `json:"spawnError,omitempty"`
-	CleanupError string `json:"cleanupError,omitempty"`
+	ExitCode        *int   `json:"exitCode"`
+	Signal          string `json:"signal"`
+	TimedOut        bool   `json:"timedOut"`
+	Cancelled       bool   `json:"cancelled"`
+	IdleTimedOut    bool   `json:"idleTimedOut"`
+	WallTimedOut    bool   `json:"wallTimedOut"`
+	Stdout          string `json:"stdout"`
+	Stderr          string `json:"stderr"`
+	Truncated       bool   `json:"truncated"`
+	DurationMS      int64  `json:"durationMs"`
+	WirePromptBytes int    `json:"-"`
+	SpawnError      string `json:"spawnError,omitempty"`
+	CleanupError    string `json:"cleanupError,omitempty"`
 
 	// harness 语义量。
 	Harness        string          `json:"harness"` // pi | kimi | mock
