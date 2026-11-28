@@ -185,6 +185,7 @@ type DailyBucket struct {
 
 // ProviderCache 单 provider 缓存统计（铁律 10：逐 provider 命中率）。
 type ProviderCache struct {
+	Calls      int64   `json:"calls,omitempty"`
 	Input      int64   `json:"input"`
 	CacheRead  int64   `json:"cache-read"`
 	CacheWrite int64   `json:"cache-write"`
@@ -687,6 +688,7 @@ func RecordUsage(st *State, u Usage, opts UsageOpts) {
 	if !ok {
 		bp = ProviderCache{}
 	}
+	bp.Calls++
 	bp.Input += u.Input
 	bp.CacheRead += u.CacheRead
 	bp.CacheWrite += u.CacheWrite

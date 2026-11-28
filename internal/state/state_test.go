@@ -284,6 +284,7 @@ func TestRecordUsageBasics(t *testing.T) {
 	assert.Equal(t, DailyBucket{Tokens: 150, CostUSD: 0.25}, st.Budget.Daily["2026-08-22"])
 
 	bp := st.Budget.Cache.ByProvider["opencode-go"]
+	assert.Equal(t, int64(1), bp.Calls)
 	assert.Equal(t, int64(100), bp.Input)
 	assert.InDelta(t, 0.6, bp.HitRate, 1e-9) // 60/100 round 3 位
 	assert.InDelta(t, 0.6, st.Budget.Cache.HitRate, 1e-9)

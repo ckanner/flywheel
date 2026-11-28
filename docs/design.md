@@ -463,7 +463,7 @@ Intake／Garden 的预算与清理升级记录若需更新已有主任务状态�
 
 同一调用的 unknown→known usage 以可审计 correction 对账，不重复增加调用数，保留原 provider／日期；已过期日桶不复活。metrics 文件与父目录同步后才返回成功。角色质量阈值默认关闭，只在安全终态已消费后影响下一次 create/resume/rebuild；保留原因、预算和工作区，详见[恢复指南](zh-CN/session-recovery.md)。
 
-`sessions.context` 省略时默认对 `execute` 及规划角色（`design-plan`、`design-review`、`plan`、`plan-review`）启用 `verified-incremental`，显式配置 `"full"` 保留每轮完整输入。
+`sessions.context` 省略时默认对全部 6 个可增量角色（`design-plan`、`design-review`、`plan`、`plan-review`、`execute`、`review`，Quick 终审除外）启用统一的 `verified-incremental` 协议，显式配置 `"full"` 保留每轮完整输入；`execute` 将 `base-ref` 纳入身份指纹并排除当前包 `schedule.writes` 自有写目标的可变内容哈希，防止自写文件误触 `full` 回退。
 同角色可信续用可省略稳定契约（或规划 Layer 1/Layer 2）：已消费终态回执重新校验，明确
 证明前次 `dispatched` 且 `completed`，提示词版本、契约（或规划稳定权威 + `project-context.md`）、当前执行目录中全部
 context/cache 文件摘要相同。安全启动拒绝或失败／取消调用即使可续用原线程，
@@ -758,7 +758,7 @@ Flywheel Execute 选择 Swarm 需要已审 packet 的 collaboration version 1：
 
 每次调用记录角色、模型、harness、实际 provider、账号 channel、prompt hash、`prompt-bytes`、时长、物理终态、会话 ID、usage 和可知成本。provider 来自 driver 可确认的结果，未知时保留 null，不能把渠道别名冒充 adapter 身份。订阅调用的美元成本不会因未上报而写成已知 0。没有价格表/真实 cost 时成本为 unknown；Kimi CLI 当前不暴露服务端 `cacheReadTokens`，按未知处理；Antigravity ACP（`0.3.2+`）在 `session/prompt` 回执提供 `scope: "turn"` 单轮 token 与缓存读取计数时由 Go 精确入账（旧 headless CLI 的 `scope: "conversation"` 仍保持未知不重复累加），并可通过 `usage_update` 展示真实上下文窗口占用，绝不伪造缓存命中率。
 
-- **声明式规划恢复、统一收敛内核与单一真源 `project-context.md`（`internal/machine/planning_control.go`、`convergence.go`、`planning_activation.go`）**：`control planning` 新增幂等 `cancel-plan`（记录 `planning-cancel` 审计项并确定性恢复 `planning.phase`）与 `plan` 的 `continue-execution: true`（严格门控于 `milestone`/`packet` 作用域及已生效的 `StartAllowed`）；Go 在 `planning.projection.retry-target` 投影精确重试目标，控制台绝不硬编码 `scope: "design"`。执行评审与规划评审共用纯函数收敛内核 `EvaluateConvergence`，对严格收敛（阻塞项单调下降且 `<= 2`）的规划请求授予有界宽限（`grace-rounds <= 2`，保持 `max-rounds` 不可变）。`project-context.md` 由单一纯函数 `renderProjectContext(st, prepareCmd)` 幂等合成（稳定规划权威 + `## Delivered Milestones` + `## Verified Workspace & Toolchain Facts`），彻底消除重新激活覆盖里程碑记忆的风险。
+- **声明式规划恢复、统一收敛驱动内核与单一真源 `project-context.md`（`internal/machine/planning_control.go`、`convergence.go`、`planning_activation.go`）**：`control planning` 新增幂等 `cancel-plan`（记录 `planning-cancel` 审计项并确定性恢复 `planning.phase`）与 `plan` 的 `continue-execution: true`（严格门控于 `milestone`/`packet` 作用域及已生效的 `StartAllowed`）；Go 在 `planning.projection.retry-target` 投影精确重试目标，控制台绝不硬编码 `scope: "design"`。执行评审与规划评审完全共用唯一纯函数收敛驱动内核 `EvaluateConvergence(ConvergenceInput)`：对严格单调收敛（`0 < currOpen < prevOpen`）、旧债全清仅余 1 项局部回归（Case B）或前置非评审重试后的首轮评审，自动授予有界收敛续行直至显式安全天花板（`MaxPlanningGraceRounds = 3`、`MaxExecutionGraceRounds = 3`，保持 `max-rounds` 不可变）；一旦停滞、反弹或空转则立即熔断。`project-context.md` 由单一纯函数 `renderProjectContext(st, prepareCmd)` 幂等合成（稳定规划权威 + `## Delivered Milestones` + `## Verified Workspace & Toolchain Facts`），彻底消除重新激活覆盖里程碑记忆的风险。
 
 - **三层前缀缓存与指针优先提示词纪律（`internal/prompts`）**：所有 Plan / Review / Execute / Synthesis / Prototype 提示词按严格三层排布（Layer 1 静态角色规则与输出契约 → Layer 2 稳定任务权威与自动生成的 `project-context.md` ≤4 KB 项目记忆 → Layer 3 本轮易变输入与有界摘要），避免易变字段污染前半段前缀。大文档（>8 KB 设计稿、>24 KB 契约集合或 git diff、>16 KB 原始失败反馈）自动切换为磁盘路径指针与有界片段，防止超长提示词触发上游静默截断。
 - **规范化规划会话作用域与跨轮增量续跑（`internal/machine`）**：规划调用统一复用规范作用域（`planning:design`、`planning:milestone:<id>`、`planning:packet:<id>`），不再按 `request.ID` 每轮冷启会话；在未显式配置 `sessions.context: "full"` 时，规划角色（`design-plan`/`design-review`/`plan`/`plan-review`）在确认上一轮已派发完成且稳定权威未变更时仅发送 Layer 3 增量更新。单会话不再对多工具步累计输入启用隐式 `280,000` token 自动重建（避免误把多步计费输入当作单步上下文窗口、打断 Provider 原生压缩与缓存复用）；仅当用户显式配置 `max-run-input-tokens > 0` 时按该阈值重建。

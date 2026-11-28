@@ -48,6 +48,9 @@ func (c *Context) agentVerdictStep(a verdictArgs) (verdictOutcome, error) {
 			APIKeys:  c.apiKeysFor(channel),
 			Watchdog: c.wdogFor(a.role),
 		}
+		if a.role == "review" && a.finalSpec == nil {
+			args.ContextTemplateVersion = reviewContextVersion
+		}
 		switch a.role {
 		case "review":
 			return c.invokeScoped(sessionRole, sessionScope, args, c.Drivers.Review.Review)

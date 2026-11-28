@@ -397,7 +397,11 @@ func (c *Context) processPlanningRequest(index int) (bool, error) {
 		if r.Stage == "" || r.Stage == "planner" {
 			if r.Stage == "" && r.Rounds >= r.MaxRounds+r.GraceRounds && r.GraceRounds < planning.MaxPlanningGraceRounds {
 				history, _ := planningConvergenceHistory(p, *r)
-				if dec := EvaluateConvergence(history, r.GraceRounds, planning.MaxPlanningGraceRounds); dec.AllowGrace {
+				if dec := EvaluateConvergence(ConvergenceInput{
+					History:   history,
+					GraceUsed: r.GraceRounds,
+					MaxGrace:  planning.MaxPlanningGraceRounds,
+				}); dec.AllowGrace {
 					r.GraceRounds++
 					c.Log(fmt.Sprintf("planning %s: granting bounded convergence grace +%d/%d (%s)", r.ID, r.GraceRounds, planning.MaxPlanningGraceRounds, dec.Reason))
 				}

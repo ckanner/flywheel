@@ -271,6 +271,15 @@ func isReviewReturnFeedback(fb any) bool {
 	return m["error-code"] == "REVIEW_RETURNED" || m["review"] != nil
 }
 
+// ReviewLayer3Heading marks the exact Layer 3 volatile boundary in BuildReviewPrompt
+// so verified-incremental review resumes can safely omit already-established
+// static rules, output schemas, and stable packet authority.
+const ReviewLayer3Heading = "\n## L1 deterministic test results (ground truth, already green)"
+
+// readOnlySandboxDiscipline is the single static source of truth shared across
+// all read-only evaluator prompts (design-review, plan-review, review, judge).
+const readOnlySandboxDiscipline = "Read-only sandbox & batch inspection: this evaluator runs in a read-only sandbox — never run build/bundle/browser commands that write temporary files to the workspace or node_modules (such as vite / npm run build writing .vite-temp or test reports); rely on the orchestrator's deterministic L1/L2/L3 receipts for mutating toolchains and focus your read-only shell probes on pure read-only checks (e.g. tsc --noEmit, AST/source inspection, in-memory Node/Python probes). Prefer 1–2 batched read-only scripts (using heredocs like `python3 -B - <<'PY'` instead of fragile nested quotes) with concise, bounded stdout."
+
 // ReviewArgs BuildReviewPrompt 输入。l1Evidence/defectInjection 为任意 JSON
 // 值（machine 层的证据对象）；diffText 为空 → 提示评审者仅凭 changed-files；
 // defectInjection 为 nil → 无该节。
@@ -302,7 +311,7 @@ func BuildReviewPrompt(a ReviewArgs) string {
 		"- Code quality, project conventions, design intent, security hazards.",
 		"- Test assertion quality: coverage proves execution, not assertion validity. Unit/regression test changes are expected; reject weakened assertions, bypassed checks, and changes to protected acceptance oracles.",
 		"- Read-only review & external memory isolation: inspect ONLY the candidate worktree and the task ledger contract. Do not edit files, run mutating commands, or read/search personal global memory directories outside this repository (such as ~/.codex/memories, ~/.claude, or other user home caches).",
-		"- Batch inspection (Code Mode efficiency): prefer 1–2 batched read-only aggregation scripts (node/python/shell) to verify file exports, symbols, coverage, and assertions in one round-trip instead of dozens of serial small commands. Keep command stdout concise and bounded (summaries, --stat, targeted slices/assertions) — never dump entire logs, lockfiles, build artifacts, or orchestrator traces to stdout.",
+		"- " + readOnlySandboxDiscipline,
 		"- Coverage matrix: every numbered requirement above must have at least one verification + evidence; a missing one means return.",
 		"- Scope: the diff must stay within the packet boundaries; any change to contract files (spec.md / task-packet-*.md) means return.",
 		"- Never block on orchestrator metadata: state.json, ledger directories, and Flywheel delivery receipts are owned by the Go orchestrator (executors are forbidden to edit them). Never fail review because a worktree copy of state.json lacks an updated delivery checkpoint.",
@@ -533,6 +542,7 @@ func BuildJudgePrompt(spec *contract.Spec, milestone contract.Milestone, packets
 		"",
 		"## Your checks & milestone judge boundary",
 		"- Read-only & external memory isolation: inspect ONLY this repository and the task ledger. Do not edit files, run mutating commands, or read/search personal global memory directories outside this repository (such as ~/.codex/memories, ~/.claude, or other user home caches).",
+		"- " + readOnlySandboxDiscipline,
 		"- Milestone-level scope: focus on cross-package integration consistency, milestone-level requirement coverage, and coherence across L1/Review/L2/L3 evidence.",
 		"- Every numbered requirement of this milestone has at least one verification with evidence; any gap fails.",
 		"- The delivered work matches the spec intent; nothing outside the milestone scope was built.",

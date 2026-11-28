@@ -147,32 +147,43 @@ func TestPillar1CancelPlanAndContinueExecutionAndRetryTarget(t *testing.T) {
 }
 
 func TestPillar2UnifiedConvergenceKernelAndPlanningGrace(t *testing.T) {
-	// Exhausted grace budget.
-	assert.False(t, EvaluateConvergence([]ConvergenceRound{{OpenBlockers: 5}, {OpenBlockers: 1}}, 2, 2).AllowGrace)
-	// Insufficient history.
-	assert.False(t, EvaluateConvergence([]ConvergenceRound{{OpenBlockers: 1}}, 0, 2).AllowGrace)
-	// Case A: monotonic drop to <=2.
-	decA := EvaluateConvergence([]ConvergenceRound{{OpenBlockers: 4}, {OpenBlockers: 1, OpenIDs: []string{"F-1"}}}, 0, 2)
+	// Exhausted grace safety ceiling.
+	assert.False(t, EvaluateConvergence(ConvergenceInput{History: []ConvergenceRound{{OpenBlockers: 5}, {OpenBlockers: 1}}, GraceUsed: 3, MaxGrace: 3}).AllowGrace)
+	// Insufficient history without prior non-review retries.
+	assert.False(t, EvaluateConvergence(ConvergenceInput{History: []ConvergenceRound{{OpenBlockers: 1}}, GraceUsed: 0, MaxGrace: 3}).AllowGrace)
+	// First review after prior L1 retries gets first-review-grace via the unified kernel.
+	decFirst := EvaluateConvergence(ConvergenceInput{History: []ConvergenceRound{{OpenMajors: 3, OpenIDs: []string{"F-1", "F-2", "F-3"}}}, GraceUsed: 0, MaxGrace: 3, PriorNonReviewFailures: 2})
+	assert.True(t, decFirst.AllowGrace)
+	assert.Equal(t, "first-review-grace", decFirst.Policy)
+	// Case A: monotonic drop (including 5 -> 3 without an arbitrary <=2 cliff).
+	decA := EvaluateConvergence(ConvergenceInput{History: []ConvergenceRound{{OpenBlockers: 5}, {OpenBlockers: 3, OpenIDs: []string{"F-1", "F-4", "F-5"}}}, GraceUsed: 0, MaxGrace: 3})
 	assert.True(t, decA.AllowGrace)
+	assert.Equal(t, "convergence-grace", decA.Policy)
 	assert.False(t, decA.Stalled)
 	// Case B: all prior open IDs cleared and 1 new localized finding remains (< first).
-	decB := EvaluateConvergence([]ConvergenceRound{
-		{OpenBlockers: 3, OpenMajors: 2, OpenIDs: []string{"A", "B", "C", "D", "E"}},
-		{OpenBlockers: 1, OpenIDs: []string{"A"}},
-		{OpenBlockers: 1, OpenIDs: []string{"NEW-PROBE"}},
-	}, 0, 2)
+	decB := EvaluateConvergence(ConvergenceInput{
+		History: []ConvergenceRound{
+			{OpenBlockers: 3, OpenMajors: 2, OpenIDs: []string{"A", "B", "C", "D", "E"}},
+			{OpenBlockers: 1, OpenIDs: []string{"A"}},
+			{OpenBlockers: 1, OpenIDs: []string{"NEW-PROBE"}},
+		},
+		GraceUsed: 0,
+		MaxGrace:  3,
+	})
 	assert.True(t, decB.AllowGrace)
 	// Stalled: same finding repeats.
-	decS := EvaluateConvergence([]ConvergenceRound{
-		{OpenBlockers: 2, OpenIDs: []string{"D-1", "D-2"}},
-		{OpenBlockers: 1, OpenIDs: []string{"D-1"}},
-		{OpenBlockers: 1, OpenIDs: []string{"D-1"}},
-	}, 0, 2)
+	decS := EvaluateConvergence(ConvergenceInput{
+		History: []ConvergenceRound{
+			{OpenBlockers: 2, OpenIDs: []string{"D-1", "D-2"}},
+			{OpenBlockers: 1, OpenIDs: []string{"D-1"}},
+			{OpenBlockers: 1, OpenIDs: []string{"D-1"}},
+		},
+		GraceUsed: 0,
+		MaxGrace:  3,
+	})
 	assert.False(t, decS.AllowGrace)
 	assert.True(t, decS.Stalled)
 	assert.False(t, allPriorOpenIDsCleared(nil, []string{"X"}))
-	assert.True(t, evaluateExecutionConvergenceGrace(true, 1, 3, 3, false))
-	assert.False(t, evaluateExecutionConvergenceGrace(false, 1, 3, 3, false))
 
 	// End-to-end planning loop: 3 rounds revise (5 -> 1 -> 1 new) triggers +1 convergence grace and passes on round 4!
 	fx, opts, calls := briefEngineFixture(t, false)

@@ -214,7 +214,7 @@ func ApplyFeedback(s *State, feedback Feedback) error {
 }
 
 // MaxPlanningGraceRounds caps bounded convergence grace rounds per planning request.
-const MaxPlanningGraceRounds = 2
+const MaxPlanningGraceRounds = 3
 
 func BeginRequest(s *State, request Request) error {
 	if request.MaxRounds == 0 {

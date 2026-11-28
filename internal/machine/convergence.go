@@ -1,12 +1,20 @@
 package machine
 
 import (
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
 
 	"github.com/ckanner/flywheel/internal/planning"
+	"github.com/ckanner/flywheel/internal/prompts"
+	"github.com/ckanner/flywheel/internal/state"
 )
+
+// MaxExecutionGraceRounds caps convergence-driven continuation rounds above a
+// packet's base attempt limit. Strictly converging loops continue up to this
+// explicit safety ceiling; stalled or oscillating loops stop immediately.
+const MaxExecutionGraceRounds = 3
 
 // ConvergenceRound captures objective, machine-checkable open/resolved blocking
 // finding counts for a single review iteration.
@@ -21,35 +29,54 @@ func (r ConvergenceRound) openTotal() int {
 	return r.OpenBlockers + r.OpenMajors
 }
 
+// ConvergenceInput is the unified input consumed by EvaluateConvergence across
+// both Planning and Execution review loops.
+type ConvergenceInput struct {
+	History                []ConvergenceRound
+	GraceUsed              int
+	MaxGrace               int
+	PriorNonReviewFailures int
+}
+
 // ConvergenceDecision is the deterministic verdict returned by the unified
 // convergence kernel across both Planning and Execution loops.
 type ConvergenceDecision struct {
 	AllowGrace bool
 	Stalled    bool
+	Policy     string
 	Reason     string
 }
 
-// EvaluateConvergence determines whether a review loop that reached its base
-// round budget is strictly converging (eligible for bounded +1 grace) or
-// stalled/oscillating (must stop immediately).
-func EvaluateConvergence(history []ConvergenceRound, graceUsed, maxGrace int) ConvergenceDecision {
-	if graceUsed >= maxGrace {
-		return ConvergenceDecision{Reason: fmt.Sprintf("grace budget exhausted (%d/%d)", graceUsed, maxGrace)}
+// EvaluateConvergence determines whether a review loop that reached its current
+// attempt/round limit is strictly converging (eligible for bounded continuation
+// up to MaxGrace) or stalled/oscillating (must circuit-break immediately).
+func EvaluateConvergence(in ConvergenceInput) ConvergenceDecision {
+	if in.GraceUsed >= in.MaxGrace {
+		return ConvergenceDecision{Reason: fmt.Sprintf("safety ceiling reached (%d/%d)", in.GraceUsed, in.MaxGrace)}
 	}
-	if len(history) < 2 {
+	if len(in.History) == 1 && in.PriorNonReviewFailures > 0 && in.History[0].openTotal() > 0 {
+		return ConvergenceDecision{
+			AllowGrace: true,
+			Policy:     "first-review-grace",
+			Reason:     fmt.Sprintf("first review after %d prior non-review retries (%d open findings)", in.PriorNonReviewFailures, in.History[0].openTotal()),
+		}
+	}
+	if len(in.History) < 2 {
 		return ConvergenceDecision{Reason: "insufficient review history to prove convergence"}
 	}
-	first := history[0]
-	prev := history[len(history)-2]
-	curr := history[len(history)-1]
+	first := in.History[0]
+	prev := in.History[len(in.History)-2]
+	curr := in.History[len(in.History)-1]
 	currOpen := curr.openTotal()
 	prevOpen := prev.openTotal()
 	firstOpen := first.openTotal()
 
-	// Case A: strictly decreasing open blocker/major count and at most 2 remaining.
-	if currOpen > 0 && currOpen < prevOpen && currOpen <= 2 {
+	// Case A: strictly decreasing open blocker/major count (no arbitrary cliff;
+	// bounded explicitly by MaxGrace safety ceiling).
+	if currOpen > 0 && currOpen < prevOpen {
 		return ConvergenceDecision{
 			AllowGrace: true,
+			Policy:     "convergence-grace",
 			Reason:     fmt.Sprintf("monotonically converging (first=%d prev=%d now=%d)", firstOpen, prevOpen, currOpen),
 		}
 	}
@@ -58,6 +85,7 @@ func EvaluateConvergence(history []ConvergenceRound, graceUsed, maxGrace int) Co
 	if currOpen == 1 && currOpen < firstOpen && allPriorOpenIDsCleared(prev.OpenIDs, curr.OpenIDs) {
 		return ConvergenceDecision{
 			AllowGrace: true,
+			Policy:     "convergence-grace",
 			Reason:     fmt.Sprintf("all prior open findings resolved with 1 remaining (first=%d prev=%d now=%d)", firstOpen, prevOpen, currOpen),
 		}
 	}
@@ -101,6 +129,69 @@ func convergenceRoundFromFindings(findings []planning.Finding) ConvergenceRound 
 	sort.Strings(round.OpenIDs)
 	sort.Strings(round.ResolvedIDs)
 	return round
+}
+
+func convergenceRoundFromReviewEvidence(ev any) (ConvergenceRound, bool) {
+	m, ok := ev.(map[string]any)
+	if !ok || m["verdict"] != "return" {
+		return ConvergenceRound{}, false
+	}
+	raw, ok := m["findings"]
+	if !ok || raw == nil {
+		return ConvergenceRound{}, true
+	}
+	b, _ := json.Marshal(raw)
+	var findings []prompts.ReviewFinding
+	if json.Unmarshal(b, &findings) != nil {
+		return ConvergenceRound{}, true
+	}
+	var round ConvergenceRound
+	for _, f := range findings {
+		if f.Status == "resolved" {
+			round.ResolvedIDs = append(round.ResolvedIDs, f.ID)
+			continue
+		}
+		if f.Severity == "blocker" {
+			round.OpenBlockers++
+			round.OpenIDs = append(round.OpenIDs, f.ID)
+		} else if f.Severity != "minor" {
+			round.OpenMajors++
+			round.OpenIDs = append(round.OpenIDs, f.ID)
+		}
+	}
+	sort.Strings(round.OpenIDs)
+	sort.Strings(round.ResolvedIDs)
+	return round, true
+}
+
+// executionConvergenceHistory collects ordered return-review rounds for the
+// packet's current execution epoch (bounded to reviewReturnCount so human-triage
+// or replan resets start a clean convergence trajectory).
+func executionConvergenceHistory(ps *state.PacketState) []ConvergenceRound {
+	var rounds []ConvergenceRound
+	for _, rawEntry := range ps.EvidenceHistory {
+		entry, ok := rawEntry.(map[string]any)
+		if !ok {
+			continue
+		}
+		var rev any
+		switch ev := entry["evidence"].(type) {
+		case state.Evidence:
+			rev = ev.Review
+		case map[string]any:
+			rev = ev["review"]
+		}
+		if r, ok := convergenceRoundFromReviewEvidence(rev); ok {
+			rounds = append(rounds, r)
+		}
+	}
+	if r, ok := convergenceRoundFromReviewEvidence(ps.Evidence.Review); ok {
+		rounds = append(rounds, r)
+	}
+	if revCount := reviewReturnCount(ps); revCount > 0 && len(rounds) > revCount {
+		rounds = rounds[len(rounds)-revCount:]
+	}
+	return rounds
 }
 
 // planningConvergenceHistory collects ordered revise-review rounds belonging to
@@ -151,10 +242,4 @@ func planningConvergenceHistory(p *planning.State, req planning.Request) ([]Conv
 		}
 	}
 	return history, lastOpenLabels
-}
-
-// evaluateExecutionConvergenceGrace shares the bounded convergence guard for
-// code-review returns in the execution loop.
-func evaluateExecutionConvergenceGrace(converging bool, openFindings, failedAttempts, baseMax int, graceUsed bool) bool {
-	return converging && openFindings > 0 && openFindings <= 2 && failedAttempts == baseMax && !graceUsed
 }

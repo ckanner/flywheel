@@ -663,6 +663,8 @@ test('Model space grammar, 3-pill Telemetry Dock (Main & SubSession), and @ ment
               cache: {
                 'by-provider': {
                   openai: { calls: 6, input: 500000, 'cache-read': 481000, 'cache-write': 0, 'hit-rate': 0.962 },
+                  'claude-native': { calls: 2, input: 200000, 'cache-read': 115000, 'cache-write': 84000, 'hit-rate': 0.575 },
+                  'claude-legacy': { input: 199418, 'cache-read': 114823, 'cache-write': 84587, 'hit-rate': 0.576 },
                 },
               },
             },
@@ -761,18 +763,22 @@ test('Model space grammar, 3-pill Telemetry Dock (Main & SubSession), and @ ment
   assert.match(ui.container.textContent, /GPT-6\.2 Sol 超高/);
   assert.match(ui.container.textContent, /Gemini 4 Carbon 高/);
 
-  // 2. Main Stream 3-Pill Telemetry Dock & upward hover/click popover with provider breakdown
+  // 2. Main Stream 3-Pill Telemetry Dock & upward hover/click popover with provider breakdown (incl. calls, Cache Write & cold-start warming)
   const mainDock = ui.container.querySelector('[data-testid="flywheel-main-telemetry-dock"]');
   assert.ok(mainDock, 'expected Main Stream 3-pill telemetry dock');
   assert.match(mainDock.textContent, /12 次调用/);
-  assert.match(mainDock.textContent, /缓存命中 96\.2%/);
+  assert.match(mainDock.textContent, /缓存命中 79\.0%/);
   await act(async () => {
     ui.container.querySelector('[data-testid="telemetry-main-cache"]').click();
   });
   const mainPop = ui.container.querySelector('[data-testid="telemetry-main-cache-popover"]');
   assert.ok(mainPop, 'expected upward cache popover on Main Stream');
   assert.match(mainPop.textContent, /openai/);
-  assert.match(mainPop.textContent, /96\.2%/);
+  assert.match(mainPop.textContent, /6次 · 96\.2%/);
+  assert.match(mainPop.textContent, /claude-native/);
+  assert.match(mainPop.textContent, /2次 · 57\.5%.*写 84\.0K.*\[预热\]/);
+  assert.match(mainPop.textContent, /claude-legacy/);
+  assert.match(mainPop.textContent, /57\.6%.*写 84\.6K.*\[预热\]/);
 
   // 3. @ Mention trigger -> fuzzy popover -> select atomic blue pill -> single Backspace removes whole pill
   await act(async () => {

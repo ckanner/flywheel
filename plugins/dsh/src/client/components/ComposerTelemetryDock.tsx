@@ -378,14 +378,11 @@ export function SubSessionTelemetryDock({
               value: trace.running ? (isZh ? '流式执行中，结束后汇总' : 'Streaming; summarized on exit') : (isZh ? 'Provider 未上报用量' : 'Not reported by provider'),
             },
           ],
-      footnote:
-        hitRate === null && trace.harness === 'antigravity'
-          ? (isZh ? 'Antigravity ACP 当前仅上报上下文占用，未暴露服务端 cacheReadTokens。' : 'Antigravity ACP reports context occupancy but does not expose cacheReadTokens.')
-          : usage
-            ? (isZh
-                ? '单次调用包含多步工具交互时，总输入为各步累计计费 Token；单步真实上下文窗口占用见右侧圆环。'
-                : 'Cumulative input sums all tool steps in this call; see the ring pill on the right for single-turn window occupancy.')
-            : undefined,
+      footnote: usage
+        ? (isZh
+            ? '单次调用包含多步工具交互时，总输入为各步累计计费 Token；单步真实上下文窗口占用见右侧圆环。'
+            : 'Cumulative input sums all tool steps in this call; see the ring pill on the right for single-turn window occupancy.')
+        : undefined,
     },
     {
       id: 'p3',
@@ -463,16 +460,26 @@ export function MainStreamTelemetryDock({
     const inp = entry?.input ?? 0;
     const cr = entry?.['cache-read'] ?? 0;
     const cw = entry?.['cache-write'] ?? 0;
+    const calls = entry?.calls ?? 0;
     totalInput += inp;
     totalCacheRead += cr;
     totalCacheWrite += cw;
     if (inp > 0) {
       hasAnyCacheMetric = true;
       const rate = typeof entry?.['hit-rate'] === 'number' ? entry['hit-rate'] * 100 : (cr / inp) * 100;
-      const tone: 'good' | 'warn' | 'danger' = rate >= 90 ? 'good' : rate >= 60 ? 'warn' : 'danger';
+      const effectiveCachedPct = ((cr + cw) / inp) * 100;
+      const isColdStartWarming =
+        cw > 0 &&
+        effectiveCachedPct >= 85 &&
+        (calls > 0 ? calls <= 2 : cw / inp >= 0.25);
+      const tone: 'good' | 'warn' | 'danger' | undefined =
+        rate >= 90 ? 'good' : isColdStartWarming ? undefined : rate >= 60 ? 'warn' : 'danger';
+      const callsLabel = calls > 0 ? (isZh ? `${calls}次 · ` : `${calls}× · `) : '';
+      const writePart = cw > 0 ? (isZh ? ` · 写 ${formatCompactTokens(cw)}` : ` · write ${formatCompactTokens(cw)}`) : '';
+      const warmTag = isColdStartWarming ? (isZh ? ' [预热]' : ' [warming]') : '';
       providerRows.push({
         label: prov,
-        value: `${rate.toFixed(1)}% (${formatCompactTokens(cr)}/${formatCompactTokens(inp)})`,
+        value: `${callsLabel}${rate.toFixed(1)}% (${formatCompactTokens(cr)}/${formatCompactTokens(inp)})${writePart}${warmTag}`,
         mono: true,
         tone,
       });

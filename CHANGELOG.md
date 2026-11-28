@@ -5,6 +5,20 @@ results are recorded separately in the [release runbook](docs/en/releasing.md)
 and [validation index](docs/validation/README.md). Historical entries retain
 their original language.
 
+## 0.44.0 — 2026-11-28 (Systemic Context Engine, Convergence-Driven Kernel, Shared Read-Only Sandbox Discipline & Provider-Agnostic Cache Telemetry)
+
+- **Unified verified-incremental context engine (`internal/machine/session_context.go`, `internal/prompts/prompts.go`, `internal/machine/steps_verdict.go`)**:
+  - Consolidate all six incremental roles (`design-plan`, `design-review`, `plan`, `plan-review`, `execute`, `review`) through one shared `verifyIncrementalResume` admission gate.
+  - Separate execution authority from writable outputs: bind `execute` incremental checkpoints to `ps.BaseRef` and exclude the packet's own `schedule.writes` targets (`isPacketWriteTarget`) from mutable worktree file hashing, eliminating false self-write `full` fallbacks while still invalidating on `base-ref` or external read-only context changes.
+  - Extend `verified-incremental` to packet `review` (`reviewContextVersion = 3`, `prompts.ReviewLayer3Heading`): when the packet contract, `project-context.md`, and `human-guidance` remain unchanged, resume turns omit static Layer 1/2 contract/rubric/discipline scaffolding and send only Layer 3 (L1 evidence, diff, prior open findings); Quick final review (`finalSpec != nil`) stays on full prompts.
+- **Unified convergence-driven retry kernel (`internal/machine/convergence.go`, `internal/machine/units.go`, `internal/machine/planning_engine.go`, `internal/planning/transitions.go`)**:
+  - Replace ad-hoc execution grace rules and rigid 3-round cliffs with ONE `EvaluateConvergence(ConvergenceInput)` kernel shared across both Execution and Planning loops (`MaxExecutionGraceRounds = 3`, `MaxPlanningGraceRounds = 3`).
+  - Strictly converging review loops (`0 < currOpen < prevOpen`), Case-B prior-ID-cleared single-remaining loops, and first-review-after-L1-failure loops continue automatically up to the explicit safety ceiling; stalled, oscillating, or rebounding loops circuit-break immediately.
+  - Exclude grace retry entries from `reviewReturnCount` so bounded grace rounds never double-count review returns.
+- **Single-source read-only sandbox discipline & provider-agnostic cache telemetry (`internal/prompts/prompts.go`, `internal/prompts/planning.go`, `internal/state/state.go`, `plugins/dsh/src/client/components/ComposerTelemetryDock.tsx`)**:
+  - Extract one static `readOnlySandboxDiscipline` constant shared across all four read-only evaluators (`design-review`, `plan-review`, `review`, `judge`) preventing worktree/tmp artifact writes and enforcing batch single-command read-only inspection.
+  - Record per-provider `calls` in `state.ProviderCache` (`budget.cache.by-provider.<provider>.calls`), remove the stale Antigravity ACP footnote from `ComposerTelemetryDock`, show per-provider `calls` and `Cache Write`, and classify small-sample / high-cache-write cold-start priming as neutral `[预热]` / `[warming]` instead of false `danger` red.
+
 ## 0.43.3 — 2026-11-27 (Bundled Antigravity 0.3.3 Failure Guard, First-Review Grace, Accurate Wire Prompt Telemetry & Systemic UI Timeline/Status/Co-Located Triage Overhaul)
 
 - **Bundled `@ckanner/dsh-subagent-antigravity@0.3.3` inline-error guard (`plugins/dsh/vendor/antigravity.json`, `plugins/dsh/package.json`)**:

@@ -913,22 +913,21 @@ func (c *Context) processPacket(packet *contract.Packet, opts processOpts) (outc
 			code = review.ErrorCode
 		}
 		outcome := c.failAttempt(packet, code, nil, nil)
-		baseMax := c.packetMaxRetries(packet)
-		if code == errReviewReturned && !c.quick() && outcome != "spin" {
-			if reviewReturnCount(ps) == 1 && ps.FailedAttempts >= baseMax && !gracePolicyUsed(ps, "first-review-grace") {
-				c.recordRetry(ps, "attempt", string(code), "first-review-grace")
-				c.Log(fmt.Sprintf("%s: granting bounded +1 first-review grace after prior L1 retries (%d open findings)", id, review.OpenFindings))
-				c.save()
-				continue
-			}
-			if evaluateExecutionConvergenceGrace(review.Converging, review.OpenFindings, ps.FailedAttempts, baseMax, gracePolicyUsed(ps, "convergence-grace")) {
-				c.recordRetry(ps, "attempt", string(code), "convergence-grace")
-				c.Log(fmt.Sprintf("%s: granting bounded +1 convergence grace (%d open findings, converging)", id, review.OpenFindings))
+		effectiveMax := c.effectiveMaxRetries(packet, ps)
+		if code == errReviewReturned && !c.quick() && outcome != "spin" && ps.FailedAttempts >= effectiveMax {
+			dec := EvaluateConvergence(ConvergenceInput{
+				History:                executionConvergenceHistory(ps),
+				GraceUsed:              executionGraceCount(ps),
+				MaxGrace:               MaxExecutionGraceRounds,
+				PriorNonReviewFailures: priorNonReviewFailureCount(ps),
+			})
+			if dec.AllowGrace {
+				c.recordRetry(ps, "attempt", string(code), dec.Policy)
+				c.Log(fmt.Sprintf("%s: granting bounded convergence continuation +%d/%d (%s)", id, executionGraceCount(ps), MaxExecutionGraceRounds, dec.Reason))
 				c.save()
 				continue
 			}
 		}
-		effectiveMax := c.effectiveMaxRetries(packet, ps)
 		reviewCapReached := code == errReviewReturned && c.Config.Guardrails.MaxReviewRounds != nil && reviewReturnCount(ps) >= *c.Config.Guardrails.MaxReviewRounds && !review.Converging
 		if outcome == "spin" || reviewCapReached || (code == errReviewReturned && !c.quick() && ps.FailedAttempts >= effectiveMax) {
 			if code == errReviewReturned && !c.quick() {
@@ -954,15 +953,45 @@ func (c *Context) packetMaxRetries(packet *contract.Packet) int {
 }
 
 func (c *Context) effectiveMaxRetries(packet *contract.Packet, ps *state.PacketState) int {
-	maxRetries := c.packetMaxRetries(packet)
-	if gracePolicyUsed(ps, "convergence-grace") || gracePolicyUsed(ps, "first-review-grace") {
-		maxRetries++
-	}
-	return maxRetries
+	return c.packetMaxRetries(packet) + executionGraceCount(ps)
 }
 
 func convergenceGraceUsed(ps *state.PacketState) bool {
 	return gracePolicyUsed(ps, "convergence-grace")
+}
+
+func executionGraceCount(ps *state.PacketState) int {
+	count := 0
+	for i := len(ps.RetryHistory) - 1; i >= 0; i-- {
+		entry, ok := ps.RetryHistory[i].(map[string]any)
+		if !ok {
+			continue
+		}
+		if entry["policy"] == "return-to-planner" || entry["policy"] == "human-triage" {
+			break
+		}
+		if entry["policy"] == "convergence-grace" || entry["policy"] == "first-review-grace" {
+			count++
+		}
+	}
+	return count
+}
+
+func priorNonReviewFailureCount(ps *state.PacketState) int {
+	count := 0
+	for i := len(ps.RetryHistory) - 1; i >= 0; i-- {
+		entry, ok := ps.RetryHistory[i].(map[string]any)
+		if !ok {
+			continue
+		}
+		if entry["policy"] == "return-to-planner" || entry["policy"] == "human-triage" {
+			break
+		}
+		if entry["scope"] == "attempt" && entry["policy"] == "requeue" && entry["error-code"] != string(errReviewReturned) {
+			count++
+		}
+	}
+	return count
 }
 
 func gracePolicyUsed(ps *state.PacketState, policy string) bool {
@@ -1009,7 +1038,8 @@ func reviewReturnCount(ps *state.PacketState) int {
 		if entry["policy"] == "return-to-planner" || entry["policy"] == "human-triage" {
 			break
 		}
-		if entry["scope"] == "attempt" && entry["error-code"] == string(errReviewReturned) {
+		if entry["scope"] == "attempt" && entry["error-code"] == string(errReviewReturned) &&
+			entry["policy"] != "convergence-grace" && entry["policy"] != "first-review-grace" {
 			count++
 		}
 	}

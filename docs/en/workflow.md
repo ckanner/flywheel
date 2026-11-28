@@ -77,8 +77,9 @@ flowchart TD
   format models as `<Model Display Name> <Effort Display Name>` separated by a space (preserving raw
   model IDs in tooltips). Both the Main Stream and Sub-Session composers render a right-aligned
   3-Pill bottom telemetry dock with upward hover/click popovers showing per-node/per-provider cache
-  hit rates, token breakdowns, and context occupancy (reporting `—` truthfully when a provider such
-  as Antigravity ACP does not expose server cache-read counters). Typing `@` or clicking `@` in the
+  hit rates, call counts, cache-write warming indicators, token breakdowns, and context occupancy
+  (reporting `—` truthfully when a provider does not expose server cache-read counters). Typing `@`
+  or clicking `@` in the
   Main Stream opens an upward fuzzy-search popover across packets and active sessions, inserting an
   atomic pill deleted with a single `Backspace`.
 

@@ -645,21 +645,27 @@ A quality rebuild requires the previous result to be consumed, accounted, and kn
 ### Verified incremental executor context
 
 `sessions.context` is optional: omission or `"verified-incremental"` enables
-verified incremental resumes for Execute and planning roles (`design-plan`,
-`design-review`, `plan`, `plan-review`); set `"full"` explicitly to resend the
-complete prompt on every call. First calls and rebuilds receive full authority.
-Later same-role resumes may omit the stable contract (or planning Layer 1/2)
-only after Go rechecks the consumed terminal receipt, exact session binding,
-prompt version, contract (or stable planning authority and `project-context.md`),
-and all context/cache file content digests.
+verified incremental resumes across all six incremental roles (`design-plan`,
+`design-review`, `plan`, `plan-review`, `execute`, and standard packet `review`);
+set `"full"` explicitly to resend the complete prompt on every call. First calls
+and rebuilds receive full authority. Later same-role resumes may omit the stable
+contract (or Layer 1/2 static rules and authority) only after Go rechecks the
+consumed terminal receipt, exact session binding, prompt version, contract (or
+stable planning/review authority and `project-context.md`), and for `execute`
+the immutable baseline (`base-ref`) plus external non-writable `context-files`
+/ `cache-scope` digests (declared `schedule.writes` targets are excluded from
+mutable worktree hashing because edits to them are tracked by
+`candidate-before`/`candidate-current`).
 References must be readable regular files within the current execution directory,
 bounded to 1 MiB per file. The update includes feedback, current/prior candidate
-identities, attempt and authoritative references (or Layer 3 volatile planning input).
+identities, attempt and authoritative references (or Layer 3 volatile input).
 
-Missing or revised references, contract changes, absent legacy checkpoints and
-invalid context receipts select full input. A changed model, effort, permission
-or explicit session mode rebuilds history. Review and Judge keep full
-inputs; Review always examines the complete current candidate and requirements.
+Missing or revised external references, `base-ref` changes, contract changes,
+absent legacy checkpoints and invalid context receipts select full input. A
+changed model, effort, permission or explicit session mode rebuilds history.
+Quick final Review (`FinalSpec != nil`) and Judge keep full inputs; Review
+always examines the complete current candidate and requirements using current
+evidence.
 `state.sessions.records[*].context` records mode, identity and reason. This is
 protocol behavior, not measured evidence of token savings or equal quality.
 

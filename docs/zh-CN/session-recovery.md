@@ -279,7 +279,7 @@ PID 推断。回执缺失、超限、损坏、身份不匹配、进程或进程�
 
 ### 代码评审收敛护栏与有界宽限
 
-普通代码评审退回（`REVIEW_RETURNED`）绝不自动回流 Plan Loop 触发整里程碑契约重写；仅 `verification-gap` 与 L1 持续失败允许自动回流 Plan Loop。当评审处于单调收敛状态（`review.Converging = true`）且剩余未闭合缺陷 `<= 2` 项、恰达基础重试上限时，编排器最多发放 **1 次** 有界 `convergence-grace`（+1 轮宽限）；宽限耗尽仍未通过则直接转人工 `inbox`。
+普通代码评审退回（`REVIEW_RETURNED`）绝不自动回流 Plan Loop 触发整里程碑契约重写；仅 `verification-gap` 与 L1 持续失败允许自动回流 Plan Loop。Execution 与 Planning 共用同一套收敛驱动内核（`EvaluateConvergence`）：当评审达到当前尝试/轮次边界时，只要仍处于严格收敛态（未闭合阻塞项严格单调下降、旧债全清仅余 1 项且低于首轮总数，或 L1 重试后的首次审查），编排器自动授予有界收敛续行直至显式安全天花板（`MaxExecutionGraceRounds = 3`、`MaxPlanningGraceRounds = 3`）；一旦停滞、反弹或空转则立即熔断转人工 `inbox`（规划环转为 `budget-stopped`）。
 
 ### 只读调用的输出截断防护与自动自愈
 
@@ -289,16 +289,7 @@ Flywheel 在任务目录 `docs/<slug>/` 自动维护面向 `rg`/`fd` 的运行�
 
 ### 可信的增量输入
 
-默认情况下（`sessions.context` 省略或设为 `"verified-incremental"`），Execute
-与规划角色（`design-plan`、`design-review`、`plan`、`plan-review`）均可复用可信同角色的
-稳定契约（或规划 Layer 1/2）；Go 复核已消费回执明确证明 `dispatched` 且 `completed`，并检查提示词
-版本、当前契约（或规划稳定权威与 `project-context.md`）及可读 context/cache 文件摘要。在 Worktree 模式下，
-位于 `docs/<slug>/` 内的只读账本引用可安全回退到主仓库工作区（`WorkspaceCwd`）读取并参与同一份哈希指纹校验，而业务源码文件仍严格仅从单元 Worktree 读取。如需每轮完整重发，可显式配置
-`sessions.context: "full"`。安全的启动拒绝或失败／取消调用
-可以保留原线程，但不证明本轮新准备的权威内容已送达；下一次仍须完整重发。
-新输入携带反馈、候选身份、尝试和引用（或规划 Layer 3 易变增量）。权威内容变化或不可用、旧任务缺
-检查点、上下文回执无效时回到完整输入，角色记录保存选择与原因。Review、Judge
-保持完整当前输入，不继承 Executor 私有历史。
+默认情况下（`sessions.context` 省略或设为 `"verified-incremental"`），全部 6 个可增量角色（`design-plan`、`design-review`、`plan`、`plan-review`、`execute` 及常规单元 `review`）共用同一套可信增量续用校验门禁；Go 复核已消费回执明确证明 `dispatched` 且 `completed`，并检查角色级提示词版本、当前契约（或规划/审查稳定权威与 `project-context.md`）以及 `execute` 的不可变基线（`base-ref`）与外部只读 context/cache 文件摘要（`execute` 当前包自有写目标 `schedule.writes` 排除在可变工作树哈希之外，避免改写自有文件误触 `full` 回退）。在 Worktree 模式下，位于 `docs/<slug>/` 内的只读账本引用可安全回退到主仓库工作区（`WorkspaceCwd`）读取并参与同一份哈希指纹校验，而外部业务源码文件仍严格仅从单元 Worktree 读取。如需每轮完整重发，可显式配置 `sessions.context: "full"`。安全的启动拒绝或失败／取消调用可以保留原线程，但不证明本轮新准备的权威内容已送达；下一次仍须完整重发。新输入携带反馈、候选身份、尝试和引用（或规划/审查 Layer 3 易变增量）。外部权威变化或不可用、`base-ref` 变更、旧任务缺检查点、上下文回执无效时回到完整输入，角色记录保存选择与原因。Quick 终审与 Judge 保持完整当前输入，Review 绝不继承 Executor 私有历史。
 
 可选[执行策略](configuration.md#有界执行策略显式启用)可选择另一完整允许绑定。
 每次切换均新建历史代次，仅改变 effort 也不例外；显式会话模式同样进入绑定

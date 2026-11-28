@@ -14,40 +14,58 @@ import (
 )
 
 // Keep prompt authority explicit across template changes. A future incompatible
-// executor or planner template must change its version before omitting stable content.
+// template must bump its role version before omitting stable content.
 const (
 	sessionContextSchemaVersion = 1
 	executeContextVersion       = 1
 	planningContextVersion      = 2
+	reviewContextVersion        = 3
 )
 
 func planningIncrementalRole(role string) bool {
 	return role == "design-plan" || role == "design-review" || role == "plan" || role == "plan-review"
 }
 
+func fileContentHash(path string) string {
+	if raw, err := os.ReadFile(path); err == nil {
+		return sessionHash(raw)
+	}
+	return ""
+}
+
+// verifyIncrementalResume is the single verified-incremental admission gate
+// shared across all incremental-capable roles (design-plan, design-review,
+// plan, plan-review, execute, review).
+func (c *Context) verifyIncrementalResume(role, scope, action string, expectedVersion int, checkpoint *state.SessionContext, previous *state.SessionRecord) bool {
+	if action != "resume" || previous == nil || previous.Context == nil || previous.Context.Version != expectedVersion ||
+		previous.Context.Identity != checkpoint.Identity || previous.Last.Status != "consumed" {
+		return false
+	}
+	_, result, _, err := c.readSessionResult(sessionKey(role, scope), previous)
+	if err != nil {
+		checkpoint.Reason = "previous context receipt could not be revalidated; complete authority supplied"
+		return false
+	}
+	if result.Session.Dispatch != "dispatched" || result.Session.Outcome != "completed" {
+		// Admission failure may retain the old thread, but its newly prepared
+		// full context was never delivered. A failed/cancelled dispatched turn
+		// also cannot establish that authority for a later incremental prompt.
+		checkpoint.Reason = "previous invocation did not confirm completed context delivery; complete authority supplied"
+		return false
+	}
+	return true
+}
+
 func (c *Context) planningSessionContextPrompt(role, scope, action string, previous *state.SessionRecord, args drivers.CallArgs) (*state.SessionContext, string) {
 	p := c.State.Planning
 	checkpoint := &state.SessionContext{Version: sessionContextSchemaVersion, Mode: "full", Reason: "complete planning authority required for a new or changed context"}
-	projectCtxHash := ""
-	if raw, err := os.ReadFile(filepath.Join(c.TaskDir, "project-context.md")); err == nil {
-		projectCtxHash = sessionHash(raw)
-	}
+	projectCtxHash := fileContentHash(filepath.Join(c.TaskDir, "project-context.md"))
 	idParts := []any{planningContextVersion, role, p.Brief, p.InputRevision, p.Clarification, p.UIPrototype, projectCtxHash}
 	if role == "plan" || role == "plan-review" {
 		idParts = append(idParts, p.CurrentDesign)
 	}
 	checkpoint.Identity = sessionHash(idParts)
-	if action != "resume" || previous == nil || previous.Context == nil || previous.Context.Version != sessionContextSchemaVersion ||
-		previous.Context.Identity != checkpoint.Identity || previous.Last.Status != "consumed" {
-		return checkpoint, args.Prompt
-	}
-	_, result, _, err := c.readSessionResult(sessionKey(role, scope), previous)
-	if err != nil {
-		checkpoint.Reason = "previous planning context receipt could not be revalidated; complete authority supplied"
-		return checkpoint, args.Prompt
-	}
-	if result.Session.Dispatch != "dispatched" || result.Session.Outcome != "completed" {
-		checkpoint.Reason = "previous planning invocation did not confirm completed context delivery; complete authority supplied"
+	if !c.verifyIncrementalResume(role, scope, action, sessionContextSchemaVersion, checkpoint, previous) {
 		return checkpoint, args.Prompt
 	}
 	idx := strings.Index(args.Prompt, prompts.PlanningLayer3Heading)
@@ -59,16 +77,33 @@ func (c *Context) planningSessionContextPrompt(role, scope, action string, previ
 	return checkpoint, prompt
 }
 
-func (c *Context) sessionContextPrompt(role, scope, action, candidate string, previous *state.SessionRecord, args drivers.CallArgs) (*state.SessionContext, string) {
-	if c.Config.Sessions.Context == "full" {
-		return nil, args.Prompt
+func (c *Context) reviewSessionContextPrompt(role, scope, action string, previous *state.SessionRecord, args drivers.CallArgs) (*state.SessionContext, string) {
+	checkpoint := &state.SessionContext{Version: sessionContextSchemaVersion, Mode: "full", Reason: "complete review authority required for a new or changed context"}
+	packetID := strings.TrimPrefix(scope, "final:")
+	packet := c.Packets[packetID]
+	if packet == nil {
+		checkpoint.Reason = "current packet is unavailable"
+		return checkpoint, args.Prompt
 	}
-	if planningIncrementalRole(role) && args.ContextTemplateVersion == planningContextVersion && c.State.Planning != nil {
-		return c.planningSessionContextPrompt(role, scope, action, previous, args)
+	projectCtxHash := fileContentHash(filepath.Join(c.TaskDir, "project-context.md"))
+	humanGuidance := ""
+	if ps := c.State.Packets[packetID]; ps != nil {
+		humanGuidance = ps.HumanGuidance
 	}
-	if role != "execute" || args.ContextTemplateVersion != executeContextVersion {
-		return nil, args.Prompt
+	checkpoint.Identity = sessionHash([]any{reviewContextVersion, packet, packet.Body, projectCtxHash, humanGuidance})
+	if !c.verifyIncrementalResume(role, scope, action, sessionContextSchemaVersion, checkpoint, previous) {
+		return checkpoint, args.Prompt
 	}
+	idx := strings.Index(args.Prompt, prompts.ReviewLayer3Heading)
+	if idx < 0 {
+		return checkpoint, args.Prompt
+	}
+	checkpoint.Mode, checkpoint.Reason = "incremental", "same review role, binding, stable contract authority and consumed dispatched-completed receipt"
+	prompt := "Continue the same independent code-review role with the verified static rules, output schema, and stable packet contract already established in this session history.\nInspect the complete current candidate and requirements using current evidence, verifying both closure of prior open findings and any new regressions. Prior passes are never current evidence.\n" + args.Prompt[idx+1:]
+	return checkpoint, prompt
+}
+
+func (c *Context) executeSessionContextPrompt(role, scope, action, candidate string, previous *state.SessionRecord, args drivers.CallArgs) (*state.SessionContext, string) {
 	checkpoint := &state.SessionContext{Version: executeContextVersion, Mode: "full", Reason: "complete authority required for a new or changed context"}
 	packet := c.Packets[scope]
 	if packet == nil {
@@ -83,9 +118,20 @@ func (c *Context) sessionContextPrompt(role, scope, action, candidate string, pr
 	}
 	slices.Sort(refs)
 	refs = slices.Compact(refs)
+	// Separate immutable external read-only authority from the packet's own
+	// declared write targets (schedule.writes). Editing own write targets is
+	// tracked by candidate-before/candidate-current, while baseRef locks the
+	// pre-packet baseline so any rebase/merge still invalidates authority.
+	var writes []string
+	if packet.Schedule != nil {
+		writes = packet.Schedule.Writes
+	}
 	contents := map[string]string{}
 	ledgerPrefix := filepath.ToSlash(filepath.Clean(c.taskDirPrefix()))
 	for _, ref := range refs {
+		if isPacketWriteTarget(ref, writes) {
+			continue
+		}
 		raw, err := readUnitReport(args.Cwd, ref)
 		if err != nil && c.WorkspaceCwd != "" && c.WorkspaceCwd != args.Cwd && isLedgerRef(ref, ledgerPrefix) {
 			raw, err = readUnitReport(c.WorkspaceCwd, ref)
@@ -96,25 +142,13 @@ func (c *Context) sessionContextPrompt(role, scope, action, candidate string, pr
 		}
 		contents[ref] = sessionHash(raw)
 	}
-	humanGuidance := ""
+	baseRef, humanGuidance := "", ""
 	if ps := c.State.Packets[scope]; ps != nil {
+		baseRef = c.baseRefOf(ps)
 		humanGuidance = ps.HumanGuidance
 	}
-	checkpoint.Identity = sessionHash([]any{executeContextVersion, c.Spec, packet, packet.Body, c.Config.Verify.ProtectedTestPatterns, contents, humanGuidance})
-	if action != "resume" || previous == nil || previous.Context == nil || previous.Context.Version != executeContextVersion ||
-		previous.Context.Identity != checkpoint.Identity || previous.Last.Status != "consumed" {
-		return checkpoint, args.Prompt
-	}
-	_, result, _, err := c.readSessionResult(sessionKey(role, scope), previous)
-	if err != nil {
-		checkpoint.Reason = "previous context receipt could not be revalidated; complete authority supplied"
-		return checkpoint, args.Prompt
-	}
-	if result.Session.Dispatch != "dispatched" || result.Session.Outcome != "completed" {
-		// Admission failure may retain the old thread, but its newly prepared
-		// full context was never delivered. A failed/cancelled dispatched turn
-		// also cannot establish that authority for a later incremental prompt.
-		checkpoint.Reason = "previous invocation did not confirm completed context delivery; complete authority supplied"
+	checkpoint.Identity = sessionHash([]any{executeContextVersion, c.Spec, packet, packet.Body, c.Config.Verify.ProtectedTestPatterns, baseRef, contents, humanGuidance})
+	if !c.verifyIncrementalResume(role, scope, action, executeContextVersion, checkpoint, previous) {
 		return checkpoint, args.Prompt
 	}
 	checkpoint.Mode, checkpoint.Reason = "incremental", "same role, binding, goal, readable authority and consumed dispatched-completed receipt"
@@ -127,6 +161,22 @@ func (c *Context) sessionContextPrompt(role, scope, action, candidate string, pr
 	return checkpoint, prompt
 }
 
+func (c *Context) sessionContextPrompt(role, scope, action, candidate string, previous *state.SessionRecord, args drivers.CallArgs) (*state.SessionContext, string) {
+	if c.Config.Sessions.Context == "full" {
+		return nil, args.Prompt
+	}
+	if planningIncrementalRole(role) && args.ContextTemplateVersion == planningContextVersion && c.State.Planning != nil {
+		return c.planningSessionContextPrompt(role, scope, action, previous, args)
+	}
+	if role == "review" && args.ContextTemplateVersion == reviewContextVersion {
+		return c.reviewSessionContextPrompt(role, scope, action, previous, args)
+	}
+	if role == "execute" && args.ContextTemplateVersion == executeContextVersion {
+		return c.executeSessionContextPrompt(role, scope, action, candidate, previous, args)
+	}
+	return nil, args.Prompt
+}
+
 func (c *Context) sessionPrompt(role, scope string, args drivers.CallArgs) string {
 	prompt := workspacePrompt(c.WorkspaceCwd, args.Cwd, role, scope) + args.Prompt
 	prompt += c.sharedPrompt(strings.TrimPrefix(scope, "final:"))
@@ -137,6 +187,26 @@ func (c *Context) sessionPrompt(role, scope string, args drivers.CallArgs) strin
 		prompt += executionDirectoryPrompt()
 	}
 	return prompt
+}
+
+// isPacketWriteTarget reports whether ref matches one of the packet's declared
+// schedule.writes targets (exact path or directory prefix).
+func isPacketWriteTarget(ref string, writes []string) bool {
+	cleanRef := filepath.ToSlash(filepath.Clean(ref))
+	for _, raw := range writes {
+		w := strings.TrimSpace(raw)
+		if w == "" {
+			continue
+		}
+		w = strings.TrimSuffix(filepath.ToSlash(filepath.Clean(w)), "/")
+		if w == "" || w == "." {
+			continue
+		}
+		if cleanRef == w || strings.HasPrefix(cleanRef, w+"/") {
+			return true
+		}
+	}
+	return false
 }
 
 // normalizeContextRef strips Markdown fragment anchors (e.g. "docs/slug/spec.md#M-02")

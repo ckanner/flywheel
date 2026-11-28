@@ -333,7 +333,7 @@ Both actions require verified human proof (`FLYWHEEL_MILESTONE_USER_ACTION` from
 
 ### Review convergence guardrails and bounded grace
 
-Non-converging ordinary code-review returns (`REVIEW_RETURNED`) never automatically trigger a full-milestone Plan Loop rewrite; only `verification-gap` and persistent L1 failures can auto-return to Plan Loop. When a converging review (`review.Converging = true`) has at most 2 open findings remaining at the base attempt limit, the orchestrator grants at most one bounded `+1` `convergence-grace` attempt; if review still returns afterward, the unit routes directly to human `inbox`.
+Non-converging ordinary code-review returns (`REVIEW_RETURNED`) never automatically trigger a full-milestone Plan Loop rewrite; only `verification-gap` and persistent L1 failures can auto-return to Plan Loop. Execution and Planning share the unified convergence-driven kernel (`EvaluateConvergence`): when a review loop reaches its current attempt/round limit while strictly converging (monotonically decreasing open blocker/major findings, all prior open IDs cleared with 1 localized remaining finding below round 1, or first review after prior L1 retries), the orchestrator grants bounded continuation up to the explicit safety ceiling (`MaxExecutionGraceRounds = 3`, `MaxPlanningGraceRounds = 3`). Stalled, oscillating, or rebounding loops circuit-break immediately to human `inbox` (or `budget-stopped` for planning).
 
 ### Read-only output-limit defense and safe retry
 
@@ -344,22 +344,26 @@ A rebuild records its reason and generation and hands over current contracts, wo
 ### Verified incremental inputs
 
 By default (when `sessions.context` is omitted or `"verified-incremental"`),
-Execute and planning roles (`design-plan`, `design-review`, `plan`, `plan-review`)
-may reuse a confirmed same-role stable contract (or planning Layer 1/2) after Go
-verifies that the consumed receipt proves `dispatched` and `completed`, together
-with the prompt version, current contract (or stable planning authority and
-`project-context.md`) and readable context/cache file digests. In worktree mode,
-read-only ledger references under `docs/<slug>/` safely fall back to the main
-workspace checkout (`WorkspaceCwd`) while business source files continue to be
-read strictly from the unit's worktree. Set
+all six incremental roles (`design-plan`, `design-review`, `plan`,
+`plan-review`, `execute`, and standard packet `review`) share one unified
+verified-incremental resume gate: Go verifies that the consumed receipt proves
+`dispatched` and `completed`, together with the role-scoped prompt version,
+current contract (or stable planning/review authority and `project-context.md`),
+and for `execute` the immutable baseline (`base-ref`) plus external non-writable
+context/cache file digests (declared `schedule.writes` targets are excluded from
+mutable worktree hashing so self-edits do not force unnecessary `full` fallbacks).
+In worktree mode, read-only ledger references under `docs/<slug>/` safely fall
+back to the main workspace checkout (`WorkspaceCwd`) while external business
+source files continue to be read strictly from the unit's worktree. Set
 `sessions.context: "full"` to always resend full prompts. A safe admission
 rejection or failed/cancelled turn may preserve the old thread, but cannot prove
 delivery of that turn's newly prepared authority; the next call resends full
 input. New input carries feedback, candidate identities, attempt and references
-(or Layer 3 planning delta). Changed or unavailable authority, legacy missing
-checkpoints and invalid context receipts select full input. The decision and
-reason are saved on the role record. Review and Judge keep full current inputs
-and never inherit Executor private history.
+(or Layer 3 volatile planning/review delta). Changed or unavailable external
+authority, `base-ref` changes, legacy missing checkpoints and invalid context
+receipts select full input. The decision and reason are saved on the role record.
+Quick final Review (`FinalSpec != nil`) and Judge keep full current inputs, and
+Review never inherits Executor private history.
 
 An opt-in [execution policy](configuration.md#bounded-execution-policy-opt-in)
 can select another complete allowed binding. Every switch starts a new history
